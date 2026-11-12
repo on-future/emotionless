@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { strip, isUnchanged, hasProfanity, splitUrls } from "../src/shared/strip.js";
-import { classify } from "../src/shared/emotion.js";
+import { classify, rankGroups } from "../src/shared/emotion.js";
 
 test("strip: 욕설·ㅋㅋ·강조어를 지우고 사실은 남긴다", () => {
   assert.equal(
@@ -110,6 +110,14 @@ test("classify: 샘플 문장의 KOTE 점수를 기대한 그룹으로 묶는다
   };
   const actual = Object.fromEntries(fixtures.map((f) => [f.id, classify(f.scores)]));
   assert.deepEqual(actual, expected);
+});
+
+test("rankGroups: 댓글이 많은 감정부터, 같으면 정해진 순서대로", () => {
+  assert.deepEqual(rankGroups({ complaint: 5, blame: 3, fear: 1, positive: 8, neutral: 1 }), [
+    "positive", "complaint", "blame", "fear", "neutral",
+  ]);
+  assert.deepEqual(rankGroups({ neutral: 2, anger: 2, sad: 0 }), ["anger", "neutral"]);
+  assert.deepEqual(rankGroups({}), []);
 });
 
 test("classify: 점수가 전부 낮으면 중립", () => {

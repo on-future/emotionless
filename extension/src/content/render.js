@@ -1,6 +1,6 @@
 // 댓글 본문을 숨기고 그 자리에 이모티콘 + 순화본을 붙인다.
 // 바뀐 내용이 없는 댓글은 원문 요소를 그대로 두고 속성 몇 개만 붙여 꾸민다.
-import { GROUPS, GROUP_ORDER } from "../shared/emotion.js";
+import { GROUPS, rankGroups } from "../shared/emotion.js";
 import { splitUrls } from "../shared/strip.js";
 
 // 확장에 포함된 큼직한 이모티콘 그림. 그림을 못 불러오면 글자 이모티콘이 대신 보인다.
@@ -202,7 +202,8 @@ let pill = null;
  * @param {() => void} onToggle
  */
 export function renderPill(counts, collapsed, onToggle) {
-  const groups = GROUP_ORDER.filter((group) => counts[group] > 0);
+  // 댓글이 많은 감정부터 보여 준다.
+  const groups = rankGroups(counts);
   const total = groups.reduce((sum, group) => sum + counts[group], 0);
   if (!total) {
     pill?.remove();
@@ -230,7 +231,7 @@ export function renderPill(counts, collapsed, onToggle) {
   const chips = el("span", "eml-pill-chips");
   if (collapsed) {
     // 접힌 상태에서는 가장 많은 감정 하나와 전체 수만 보여 준다.
-    const top = groups.reduce((a, b) => (counts[b] > counts[a] ? b : a));
+    const top = groups[0];
     const chip = el("span", "eml-chip");
     chip.append(emojiEl(top, "eml-emoji-sm"), el("span", null, String(total)));
     chips.append(chip);

@@ -12,8 +12,18 @@ export const GROUPS = {
   neutral: { emoji: "😐", label: "중립", fold: false },
 };
 
-// 요약 막대에 표시하는 순서
+// 감정을 늘어놓는 기본 순서 (개수가 같을 때의 순서)
 export const GROUP_ORDER = ["complaint", "anger", "blame", "sad", "fear", "surprise", "positive", "neutral"];
+
+/**
+ * 댓글이 있는 감정을 많은 순서로 늘어놓는다. 개수가 같으면 GROUP_ORDER 순서를 따른다.
+ * 맨 앞만 봐도 어떤 반응이 많은지 알 수 있게 하려는 것이다.
+ * @param {Record<string, number>} counts
+ * @returns {string[]}
+ */
+export function rankGroups(counts) {
+  return GROUP_ORDER.filter((group) => counts[group] > 0).sort((a, b) => counts[b] - counts[a]);
+}
 
 const SOFT = {
   positive: [

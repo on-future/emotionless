@@ -1,5 +1,5 @@
 // 설정 팝업. 현재 페이지의 댓글 분위기를 보여 주고, 설정을 바꾸면 새로 고침 없이 바로 적용된다.
-import { GROUPS, GROUP_ORDER } from "./shared/emotion.js";
+import { GROUPS, GROUP_ORDER, rankGroups } from "./shared/emotion.js";
 
 const DEFAULTS = { enabled: true, fold: true, showPill: true, disabledHosts: [], selectors: {} };
 const POLL_MS = 1000;
@@ -80,17 +80,18 @@ function setMood({ state, group = "neutral", title, sub, counts = null, showRelo
       bar.append(seg);
     }
   }
-  const parts = [];
+  // 댓글이 많은 감정부터 늘어놓는다. 막대는 요소를 그대로 두고 순서만 바꿔 길이 변화가 부드럽게 이어진다.
+  const ranked = rankGroups(counts);
   for (const seg of bar.children) {
     const count = counts[seg.dataset.group] ?? 0;
     seg.style.flexGrow = String(count);
+    seg.style.order = String(ranked.indexOf(seg.dataset.group));
     seg.toggleAttribute("data-on", count > 0);
-    if (count > 0) parts.push(`${GROUPS[seg.dataset.group].label} ${count}`);
   }
-  bar.setAttribute("aria-label", parts.join(", "));
+  bar.setAttribute("aria-label", ranked.map((g) => `${GROUPS[g].label} ${counts[g]}`).join(", "));
 
   chips.replaceChildren(
-    ...GROUP_ORDER.filter((g) => counts[g] > 0).map((g) => {
+    ...ranked.map((g) => {
       const li = document.createElement("li");
       const img = document.createElement("img");
       img.src = emojiUrl(g);
@@ -156,7 +157,7 @@ function render() {
       sub: "댓글이 있는 곳까지 내려 보세요. 화면에 보이는 댓글부터 처리해요.",
     });
   } else {
-    const top = GROUP_ORDER.reduce((best, g) => ((counts[g] ?? 0) > (counts[best] ?? 0) ? g : best));
+    const top = rankGroups(counts)[0];
     setMood({
       state: "counts",
       group: top,
