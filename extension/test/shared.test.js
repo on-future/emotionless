@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { strip, isUnchanged, hasProfanity } from "../src/shared/strip.js";
+import { strip, isUnchanged, hasProfanity, splitUrls } from "../src/shared/strip.js";
 import { classify } from "../src/shared/emotion.js";
 
 test("strip: 욕설·ㅋㅋ·강조어를 지우고 사실은 남긴다", () => {
@@ -61,6 +61,29 @@ test("strip: 주소와 소수점은 건드리지 않는다", () => {
   assert.ok(isUnchanged(withUrl, strip(withUrl)));
   assert.equal(strip("평점 3.5점인데 진짜 재밌음ㅋㅋ"), "평점 3.5점인데 재밌음.");
   assert.equal(strip("와!!!대박 https://example.com/a.b?c=1 여기 봐"), "https://example.com/a.b?c=1 여기 봐.");
+});
+
+test("strip: 띄어 쓰지 않은 문장 부호도 문장 끝으로 본다", () => {
+  assert.equal(strip("아...그건 좀 아닌듯"), "그건 좀 아닌듯.");
+  assert.equal(strip("아니...그게 아니라 이거임"), "그게 아니라 이거임.");
+  assert.equal(strip("뭐임?아 짜증나네"), "뭐임? 짜증나네.");
+  assert.equal(strip("최악.다시는 안 감"), "다시는 안 감.");
+});
+
+test("strip: 주소 끝에 붙은 글자와 문장 부호는 주소로 보지 않는다", () => {
+  assert.equal(strip("https://youtu.be/abcㅋㅋㅋ 이거 봐"), "https://youtu.be/abc 이거 봐.");
+  assert.equal(strip("(https://a.com/x) 참고"), "(https://a.com/x) 참고.");
+  assert.equal(strip("https://a.com/x. 진짜 좋음"), "https://a.com/x. 좋음.");
+  assert.equal(strip("https://ko.wikipedia.org/wiki/A_(B) 참고"), "https://ko.wikipedia.org/wiki/A_(B) 참고.");
+});
+
+test("splitUrls: 글과 주소를 나눈다", () => {
+  assert.deepEqual(splitUrls("보세요 (https://a.com/x). 끝"), [
+    { text: "보세요 (", url: false },
+    { text: "https://a.com/x", url: true },
+    { text: "). 끝", url: false },
+  ]);
+  assert.deepEqual(splitUrls("주소 없음"), [{ text: "주소 없음", url: false }]);
 });
 
 test("strip: 단어 일부로 쓰인 말은 지우지 않는다", () => {

@@ -35,21 +35,60 @@ const RE_WORDCHAR = `${H}0-9A-Za-z`;
 const RE_MARK_BETWEEN = new RegExp(`([${RE_WORDCHAR}])\\s*${MARK}+\\s*(?=[${RE_WORDCHAR}])`, "g");
 
 // 주소는 건드리지 않도록 잠시 빼 두었다가 마지막에 되돌린다.
-const RE_URL = /https?:\/\/[^\s<>"']+/g;
+// 주소에 쓸 수 있는 ASCII 문자만 주소로 본다 (뒤에 붙은 한글·ㅋㅋ 는 주소가 아니다).
+const RE_URL = /https?:\/\/[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+/g;
 const HOLD = "\u0002";
+const RE_HELD = new RegExp(`${HOLD}(\\d+)${HOLD}`, "g");
+const RE_HAS_WORD = new RegExp(`[${RE_WORDCHAR}${HOLD}]`);
+// 한글 사이에 띄어쓰기 없이 찍힌 마침표 ("최악.다시는")
+const RE_TIGHT_PERIOD = new RegExp(`([${H}])\\.(?=[${H}])`, "g");
+const RE_PROFANITY_ANY = new RegExp(`${PROFANITY.join("|")}|ㅅㅂ|ㅆㅂ|ㅂㅅ|ㅈㄴ|ㅈㄹ|ㅁㅊ`);
+
+// 주소 끝에 붙은 문장 부호와 짝이 없는 닫는 괄호는 주소가 아니다.
+function trimUrl(url) {
+  let out = url;
+  for (;;) {
+    const trimmed = out.replace(/[.,!?;:'"]+$/, "");
+    const next = trimmed.endsWith(")") && !trimmed.includes("(") ? trimmed.slice(0, -1) : trimmed;
+    if (next === out) return out;
+    out = next;
+  }
+}
+
+/**
+ * 글을 주소와 주소가 아닌 부분으로 나눈다.
+ * @returns {{text: string, url: boolean}[]}
+ */
+export function splitUrls(text) {
+  const parts = [];
+  let last = 0;
+  for (const match of text.matchAll(RE_URL)) {
+    const url = trimUrl(match[0]);
+    if (match.index > last) parts.push({ text: text.slice(last, match.index), url: false });
+    parts.push({ text: url, url: true });
+    last = match.index + url.length;
+  }
+  if (last < text.length) parts.push({ text: text.slice(last), url: false });
+  return parts;
+}
 
 export function strip(text) {
   const urls = [];
-  let s = text
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(RE_URL, (url) => `${HOLD}${urls.push(url) - 1}${HOLD}`);
+  let s = splitUrls(text.replace(/\s+/g, " ").trim())
+    .map((part) => (part.url ? `${HOLD}${urls.push(part.text) - 1}${HOLD}` : part.text))
+    .join("");
   // 글 중간의 ㅋㅋ·ㅠㅠ 는 문장 경계 역할을 하므로 마침표로 바꾼다.
   s = s.replace(RE_NOISE, MARK).replace(RE_MARK_BETWEEN, "$1. ").replaceAll(MARK, " ");
   s = s.replace(RE_PROFANITY, " ");
   for (const [re, to] of REPLACEMENTS) s = s.replace(re, to);
   s = s.replace(RE_INTENS, " ");
-  s = s.replace(/~+/g, " ").replace(/!+/g, ". ").replace(/\?[?!.]*/g, "?").replace(/\.{2,}|…+/g, ".");
+  // 문장 부호를 정리한다. 뒤에 공백을 넣어, 붙여 쓴 글도 문장 단위로 나뉘게 한다.
+  s = s
+    .replace(/~+/g, " ")
+    .replace(/!+/g, ". ")
+    .replace(/\?[?!.]*/g, "? ")
+    .replace(/\.{2,}|…+/g, ". ")
+    .replace(RE_TIGHT_PERIOD, "$1. ");
 
   const parts = [];
   // 마침표 뒤에 공백이 있을 때만 문장 끝으로 본다 ("3.5점", "11.12" 는 그대로 둔다).
@@ -58,16 +97,16 @@ export function strip(text) {
     let body = (end ? raw.slice(0, -1) : raw).replace(/\s+/g, " ").trim();
     body = body.replace(RE_LEADING, "").trim();
     body = body.replace(RE_TAIL, "").trim();
-    if (!new RegExp(`[${RE_WORDCHAR}${HOLD}]`).test(body)) continue;
+    if (!RE_HAS_WORD.test(body)) continue;
     // 주소로 끝나는 문장에는 마침표를 붙이지 않는다.
     parts.push(body + (end || (body.endsWith(HOLD) ? "" : ".")));
   }
-  return parts.join(" ").replace(new RegExp(`${HOLD}(\\d+)${HOLD}`, "g"), (_, i) => urls[Number(i)]);
+  return parts.join(" ").replace(RE_HELD, (_, i) => urls[Number(i)]);
 }
 
 // 욕설이 들어 있는지 (분류 모델이 짧은 욕설 댓글을 중립으로 볼 때 보정하는 데 쓴다)
 export function hasProfanity(text) {
-  return new RegExp(PROFANITY.join("|")).test(text) || /ㅅㅂ|ㅆㅂ|ㅂㅅ|ㅈㄴ|ㅈㄹ|ㅁㅊ/.test(text);
+  return RE_PROFANITY_ANY.test(text);
 }
 
 const normalize = (t) => t.replace(/\s+/g, " ").trim().replace(/[.]$/, "");

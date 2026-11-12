@@ -40,6 +40,14 @@
   overflow-wrap: anywhere;
 }
 [data-eml-inplace][data-eml-block] { display: block !important; }
+/* 줄 수나 높이가 제한된 자리에서는 위아래 여백을 두지 않는다. */
+[data-eml-inplace][data-eml-tight] {
+  min-height: 0;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  background-size: contain !important;
+  background-size: min(var(--eml-size), 100%) !important;
+}
 .eml-body { flex: 1 1 0; min-width: 0; }
 .eml-emoji {
   flex: none;

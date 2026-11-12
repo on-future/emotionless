@@ -1,6 +1,6 @@
 // 콘텐츠 스크립트: 댓글을 찾아 두고, 화면에 보이는(곧 보일) 댓글만 분류해 표시한다.
 import { findComments, selectorFromClick } from "./detect.js";
-import { renderComment, removeView, renderPill } from "./render.js";
+import { renderComment, removeView, renderPill, measure, syncTypography, fixClipping } from "./render.js";
 import { GROUPS } from "../shared/emotion.js";
 import { strip, isUnchanged, hasProfanity } from "../shared/strip.js";
 
@@ -128,11 +128,17 @@ async function pump() {
         .filter((textEl) => textEl.isConnected && tracked.get(textEl)?.state === "queued");
       if (!batch.length) continue;
       const groups = await classify(batch.map((textEl) => tracked.get(textEl).original.slice(0, MAX_CHARS)));
+      // 읽기를 먼저 끝내고 쓰기를 몰아서 한다.
+      const metrics = batch.map((textEl) => {
+        const entry = tracked.get(textEl);
+        return entry && groups && textEl.isConnected ? measure(textEl, entry.item) : null;
+      });
+      const inPlace = [];
       batch.forEach((textEl, index) => {
         const entry = tracked.get(textEl);
         textEl.removeAttribute("data-eml-pending");
         if (!entry) return;
-        if (!groups || !textEl.isConnected) {
+        if (!metrics[index]) {
           forget(textEl, entry);
           return;
         }
@@ -140,12 +146,26 @@ async function pump() {
         // 욕설이 있는데 모델이 중립으로 본 댓글은 분노로 표시한다.
         entry.group = groups[index] === "neutral" && hasProfanity(entry.original) ? "anger" : groups[index];
         entry.state = "done";
-        entry.view = renderComment(
-          textEl,
-          { group: entry.group, original: entry.original, cleaned, changed: !isUnchanged(entry.original, cleaned) },
-          settings,
-        );
+        const data = {
+          group: entry.group,
+          original: entry.original,
+          cleaned,
+          changed: !isUnchanged(entry.original, cleaned),
+        };
+        entry.view = renderComment(textEl, data, settings, metrics[index]);
+        if (!entry.view) {
+          inPlace.push({
+            textEl,
+            item: entry.item,
+            wasClipped: metrics[index].clipped,
+            fallback: () => {
+              removeView(textEl, null);
+              entry.view = renderComment(textEl, data, settings, metrics[index], { forceView: true });
+            },
+          });
+        }
       });
+      fixClipping(inPlace);
       publishCounts();
       reportFrameHeight();
       if (!groups) {
@@ -186,6 +206,17 @@ function scan() {
     textEl.setAttribute("data-eml-pending", "");
     visibility.observe(textEl);
   }
+}
+
+// 사이트 테마가 바뀌면 순화본에 옮겨 둔 글자색을 다시 맞춘다.
+let themeTimer = null;
+function scheduleThemeSync() {
+  clearTimeout(themeTimer);
+  themeTimer = setTimeout(() => {
+    const pairs = [];
+    for (const [textEl, entry] of tracked) if (entry.view?.isConnected) pairs.push({ textEl, view: entry.view });
+    if (pairs.length) syncTypography(pairs);
+  }, 300);
 }
 
 function scheduleScan() {
@@ -262,6 +293,13 @@ async function main() {
     if (external) scheduleScan();
   });
   observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+
+  // 테마 전환은 보통 html 이나 body 의 속성을 바꾸거나, 시스템 설정을 따라간다.
+  const themeObserver = new MutationObserver(scheduleThemeSync);
+  const themeAttributes = { attributes: true, attributeFilter: ["class", "style", "dark", "data-theme", "data-color-mode", "theme"] };
+  themeObserver.observe(document.documentElement, themeAttributes);
+  themeObserver.observe(document.body, themeAttributes);
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", scheduleThemeSync);
   scan();
 }
 

@@ -3,11 +3,22 @@
 const HINT = /comment|cmt|reply|replies|review|discuss|thread|댓글|답글|덧글|리플/i;
 const TEXT_HINT = /content|contents|text|txt|body|message|msg|desc|usertxt/i;
 const HANGUL = /[가-힣]/;
-// 본문이 아닌 칸(작성자, 날짜, 배지, 버튼 줄 등)에 흔히 붙는 이름
-const NOT_TEXT_HINT = /badge|pinned|label|author|nick|name|date|time|meta|head|count|like|vote|action|toolbar|button|btn/i;
+// 본문이 아닌 칸(작성자, 날짜, 배지, 버튼 줄 등)에 흔히 붙는 이름.
+// 낱말 단위로만 견준다 ("timeline" 이 "time" 으로 걸리지 않게).
+const NOT_TEXT_TOKENS = new Set([
+  "badge", "badges", "pinned", "label", "author", "nick", "nickname", "name", "username", "date", "time",
+  "datetime", "timestamp", "meta", "head", "header", "count", "like", "likes", "vote", "votes", "action",
+  "actions", "toolbar", "button", "buttons", "btn",
+]);
 // 구조가 특이해 자동 감지가 어긋나는 주요 사이트는 위치를 정해 둔다.
+// 규칙이 있는 사이트에서는 자동 감지를 쓰지 않는다 (댓글이 아직 안 불러와졌을 때 다른 영역을 잘못 잡지 않도록).
+// skipPath 에 해당하는 화면은 규칙이 맞지 않으므로 자동 감지에 맡긴다.
 const SITE_RULES = {
-  "www.youtube.com": { item: "ytd-comment-view-model, ytd-comment-renderer", text: "#content-text" },
+  "www.youtube.com": {
+    item: "ytd-comment-view-model, ytd-comment-renderer",
+    text: "#content-text",
+    skipPath: /^\/live_chat/,
+  },
   "m.youtube.com": { item: "ytm-comment-renderer", text: ".comment-text" },
 };
 // 댓글 항목이 될 수 없는 태그 (본문 안의 문단, 인라인 요소 등)
@@ -55,11 +66,19 @@ function ownText(el) {
 function isNotText(el) {
   const cls = typeof el.className === "string" ? el.className : "";
   const name = `${cls} ${el.id || ""}`;
-  return NOT_TEXT_HINT.test(name) && !TEXT_HINT.test(name);
+  if (TEXT_HINT.test(name)) return false;
+  // "comment-head", "date_time", "userName" 을 낱말로 쪼갠다.
+  const tokens = name.split(/[^A-Za-z0-9]+|(?<=[a-z])(?=[A-Z])/);
+  return tokens.some((token) => NOT_TEXT_TOKENS.has(token.toLowerCase()));
 }
 
 // 댓글 항목 안에서 본문 요소를 고른다. 중첩된 다른 항목(답글)에 속한 요소는 건너뛴다.
 function findTextEl(item, itemSet) {
+  // 본문이 아닌 칸을 걸러 내고 찾되, 그래서 아무것도 못 찾으면 거르지 않고 다시 찾는다.
+  return searchTextEl(item, itemSet, true) ?? searchTextEl(item, itemSet, false);
+}
+
+function searchTextEl(item, itemSet, skipNonText) {
   let best = null;
   let bestLen = 0;
   let hinted = null;
@@ -67,7 +86,7 @@ function findTextEl(item, itemSet) {
     acceptNode(el) {
       if (el !== item && itemSet.has(el)) return NodeFilter.FILTER_REJECT;
       if (el.matches(NOT_TEXT_ANCESTOR)) return NodeFilter.FILTER_REJECT;
-      if (el !== item && isNotText(el)) return NodeFilter.FILTER_REJECT;
+      if (skipNonText && el !== item && isNotText(el)) return NodeFilter.FILTER_REJECT;
       return NodeFilter.FILTER_ACCEPT;
     },
   });
@@ -127,15 +146,6 @@ function findItemsAuto() {
  * @returns {{item: Element, textEl: Element}[]}
  */
 export function findComments(customSelector) {
-  const rule = customSelector ? null : SITE_RULES[location.hostname];
-  if (rule) {
-    const out = [];
-    for (const item of document.querySelectorAll(rule.item)) {
-      const textEl = item.querySelector(rule.text);
-      if (textEl && !textEl.closest(OURS)) out.push({ item, textEl });
-    }
-    return out;
-  }
   let items = [];
   if (customSelector) {
     try {
@@ -144,7 +154,18 @@ export function findComments(customSelector) {
       items = [];
     }
   }
-  if (!items.length) items = findItemsAuto();
+  if (!items.length) {
+    const rule = SITE_RULES[location.hostname];
+    if (rule && !rule.skipPath?.test(location.pathname)) {
+      const out = [];
+      for (const item of document.querySelectorAll(rule.item)) {
+        const textEl = item.querySelector(rule.text);
+        if (textEl && !textEl.closest(OURS)) out.push({ item, textEl });
+      }
+      return out;
+    }
+    items = findItemsAuto();
+  }
 
   const itemSet = new Set(items);
   const seen = new Set();
