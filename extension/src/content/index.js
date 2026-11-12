@@ -12,7 +12,7 @@ import {
   fixInPlace,
 } from "./render.js";
 import { startPicker, stopPicker } from "./picker.js";
-import { openEmotionPicker, openWordMenu, openConsent, closePopover } from "./feedback.js";
+import { openEmotionPicker, openWordMenu, openShareNotice, closePopover } from "./feedback.js";
 import { GROUPS } from "../shared/emotion.js";
 import { strip, isUnchanged, hasProfanity } from "../shared/strip.js";
 import { DEFAULTS, STORAGE_KEYS, DATA_KEYS, normalize, normalizeData } from "../shared/settings.js";
@@ -435,18 +435,22 @@ function share(payload, anchor) {
       chrome.runtime.sendMessage({ type: "feedback", payload });
     } catch {}
   };
-  if (settings.shareFeedback === true) send();
-  else if (settings.shareFeedback === null && __API_BASE__) {
-    // 처음 한 번만 묻는다.
-    openConsent({
-      x: anchor.x,
-      y: anchor.y,
-      onAnswer: (answer) => {
-        settings.shareFeedback = answer;
-        chrome.storage.local.set({ shareFeedback: answer }).then(() => answer && send());
-      },
-    });
+  if (!__API_BASE__ || settings.shareFeedback === false) return;
+  if (settings.shareNoticeSeen) {
+    send();
+    return;
   }
+  // 보내기는 기본으로 켜져 있다. 처음 한 번은 보낸다는 것을 알리고, 그 자리에서 끌 수 있게 한다.
+  // 안내를 확인하기 전에는 보내지 않는다.
+  openShareNotice({
+    x: anchor.x,
+    y: anchor.y,
+    onClose: (keepSharing) => {
+      settings.shareNoticeSeen = true;
+      settings.shareFeedback = keepSharing;
+      chrome.storage.local.set({ shareNoticeSeen: true, shareFeedback: keepSharing }).then(() => keepSharing && send());
+    },
+  });
 }
 
 function fixEmotion(textEl, group, anchor) {

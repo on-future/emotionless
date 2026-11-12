@@ -19,7 +19,7 @@ const el = (tag, className, text) => {
   return node;
 };
 
-function show(node, x, y) {
+function show(node, x, y, onDismiss = null) {
   closePopover();
   pop = node;
   pop.classList.add("eml-pop");
@@ -44,6 +44,7 @@ function show(node, x, y) {
     window.addEventListener("scroll", closePopover, { capture: true, passive: true, once: true });
   });
   cleanup = () => {
+    onDismiss?.();
     clearTimeout(timer);
     document.removeEventListener("mousedown", onDown, true);
     document.removeEventListener("keydown", onKey, true);
@@ -105,29 +106,40 @@ export function openWordMenu({ x, y, actions, onPick }) {
   show(node, x, y);
 }
 
-/** 처음 고쳤을 때 한 번, 고친 내용을 개선에 보낼지 묻는다. */
-export function openConsent({ x, y, onAnswer }) {
+/**
+ * 처음 고쳤을 때 한 번, 고친 내용을 개선에 보낸다는 것을 알리고 끌 수 있게 한다.
+ * @param {{x: number, y: number, onClose: (keepSharing: boolean) => void}} options
+ *   onClose: "보내지 않기"를 고르면 false, 확인하거나 그냥 닫으면 true
+ */
+export function openShareNotice({ x, y, onClose }) {
   const node = el("div", "eml-pop-consent");
   node.setAttribute("role", "dialog");
   node.append(
-    el("p", "eml-pop-title", "고친 내용을 보내 줄까요?"),
-    el("p", "eml-pop-text", "댓글 글과 고른 내용만 보내고, 모두의 판정을 더 정확하게 만드는 데 써요. 나중에 설정에서 바꿀 수 있어요."),
+    el("p", "eml-pop-title", "고친 내용은 개선에 쓰여요"),
+    el("p", "eml-pop-text", "고친 댓글의 글과 고른 내용만 보내, 모두의 판정을 더 정확하게 만드는 데 써요. 설정에서 언제든 끌 수 있어요."),
   );
+  let answered = false;
+  const answer = (keepSharing) => {
+    if (answered) return;
+    answered = true;
+    onClose(keepSharing);
+  };
   const buttons = el("div", "eml-pop-buttons");
   for (const [label, value, primary] of [
-    ["내 기기에만", false, false],
-    ["보내기", true, true],
+    ["보내지 않기", false, false],
+    ["확인", true, true],
   ]) {
     const button = el("button", `eml-pop-action${primary ? " eml-pop-primary" : ""}`, label);
     button.type = "button";
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
+      answer(value);
       closePopover();
-      onAnswer(value);
     });
     buttons.append(button);
   }
   node.append(buttons);
-  show(node, x, y);
+  // 바깥을 눌러 닫은 경우도 안내를 본 것으로 친다.
+  show(node, x, y, () => answer(true));
 }

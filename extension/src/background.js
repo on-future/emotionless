@@ -33,7 +33,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 // ── 피드백 서버 ──────────────────────────────────────────────────────────
-// 사용자가 동의한 경우에만 고친 내용을 보내고, 검토를 거쳐 공개된 묶음을 받아 온다.
+// 사용자가 판정을 고치면 그 내용을 보내고(기본으로 켜져 있고 끌 수 있다), 검토를 거쳐 공개된 묶음을 받아 온다.
 const API_BASE = __API_BASE__;
 const GROUPS = ["anger", "blame", "complaint", "positive", "sad", "fear", "surprise", "neutral"];
 const SYNC_INTERVAL_MS = 12 * 60 * 60 * 1000;
@@ -49,7 +49,8 @@ async function installId() {
 async function sendFeedback(payload) {
   if (!API_BASE) return;
   const { shareFeedback } = await chrome.storage.local.get("shareFeedback");
-  if (shareFeedback !== true) return;
+  // 기본으로 보내고, 사용자가 끈 경우에만 보내지 않는다.
+  if (shareFeedback === false) return;
   await fetch(`${API_BASE}/v1/feedback`, {
     method: "POST",
     headers: { "content-type": "application/json" },

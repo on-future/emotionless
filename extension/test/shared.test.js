@@ -130,6 +130,10 @@ test("normalize: 빠진 설정은 기본값으로, 옛 접기 스위치는 단�
   assert.equal(normalize({ fold: false, level: "hide" }).level, "hide");
   assert.equal(normalize({ level: "엉뚱한 값" }).level, "fold");
   assert.equal(normalize({ enabled: false, showPill: false }).enabled, false);
+  // 고친 내용 보내기는 기본으로 켜져 있고, 명시적으로 끈 경우에만 꺼진다
+  assert.equal(normalize({}).shareFeedback, true);
+  assert.equal(normalize({ shareFeedback: null }).shareFeedback, true);
+  assert.equal(normalize({ shareFeedback: false }).shareFeedback, false);
 });
 
 test("strip: 사용자가 알려 준 표현을 더 지우거나 남긴다", () => {

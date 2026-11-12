@@ -12,8 +12,10 @@ export const DEFAULTS = {
   level: "fold",
   showPill: true,
   pillCollapsed: false,
-  // 고친 내용을 개선에 보낼지. null: 아직 묻지 않음
-  shareFeedback: null,
+  // 고친 내용을 개선에 보낼지. 기본으로 켜져 있고, 원하지 않는 사람이 끈다.
+  shareFeedback: true,
+  // 보낸다는 안내를 한 번 보여 줬는지
+  shareNoticeSeen: false,
   disabledHosts: [],
   selectors: {},
 };
@@ -47,5 +49,7 @@ export function normalize(stored = {}) {
   const settings = { ...DEFAULTS };
   for (const key of Object.keys(DEFAULTS)) if (stored[key] !== undefined) settings[key] = stored[key];
   if (!LEVELS.includes(stored.level)) settings.level = stored.fold === false ? "clean" : DEFAULTS.level;
+  // 명시적으로 끈 경우(false)만 끈 것으로 본다.
+  settings.shareFeedback = stored.shareFeedback !== false;
   return settings;
 }
