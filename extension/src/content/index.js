@@ -14,7 +14,8 @@ import {
 import { startPicker, stopPicker } from "./picker.js";
 import { openEmotionPicker, openWordMenu, openShareNotice, closePopover } from "./feedback.js";
 import { GROUPS } from "../shared/emotion.js";
-import { strip, isUnchanged, hasProfanity } from "../shared/strip.js";
+import { isUnchanged, hasProfanity } from "../shared/strip.js";
+import { cleanText } from "../shared/clean.js";
 import { DEFAULTS, STORAGE_KEYS, DATA_KEYS, normalize, normalizeData } from "../shared/settings.js";
 import { learnedGroup, addFix, textKey, OWN_WEIGHT, SHARED_WEIGHT } from "../shared/learn.js";
 
@@ -325,7 +326,8 @@ async function pump() {
           return;
         }
         // "표시만" 단계에서는 글을 건드리지 않는다.
-        const cleaned = level === "label" ? entry.original : strip(entry.original, words);
+        // 모델이 고른 지울 부분으로 순화한다. 사용자가 알려 준 표현과 늘 지우는 것(욕설 등)도 함께 반영한다.
+        const cleaned = level === "label" ? entry.original : cleanText(entry.original, groups[index].del ?? [], words);
         entry.cleaned = cleaned;
         const data = {
           group: entry.group,

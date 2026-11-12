@@ -46,13 +46,13 @@ emotionless 는 댓글의 감정을 먼저 알려 주고, 날 선 표현을 걷�
 · 한국어 댓글을 대상으로 합니다. 다른 언어의 댓글은 그대로 둡니다.
 · 감정 판정은 자동 분류라 틀릴 수 있습니다. 비꼬는 말을 긍정으로 보는 경우가 있습니다.
 · 사이트 구조에 따라 댓글을 찾지 못할 수 있습니다. 이때는 "댓글 직접 지정"을 써 주세요.
-· 모델이 포함되어 설치 용량이 약 150MB 입니다.
+· 모델이 포함되어 설치 용량이 약 30MB 입니다.
 
 ■ 설정
 확장 아이콘을 눌러 전체 켜기/끄기, 사이트별 켜기/끄기, 접기 사용 여부를 바꿀 수 있습니다.
 
 ■ 오픈소스 고지
-KOTE 감정 분류 모델(MIT), Transformers.js(Apache-2.0), ONNX Runtime Web(MIT), Fluent Emoji(MIT)를 사용합니다.
+KcELECTRA-small(MIT), KOTE 데이터셋(MIT), ONNX Runtime Web(MIT), Fluent Emoji(MIT)를 사용합니다.
 ```
 
 **카테고리**: 웰빙 (Well-being). 대안: 도구 (Tools)

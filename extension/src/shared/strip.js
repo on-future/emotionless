@@ -119,6 +119,19 @@ export function strip(text, words = {}) {
   return parts.join(" ").replace(RE_HELD, (_, i) => urls[Number(i)]);
 }
 
+/**
+ * 모델과 상관없이 늘 지우는 부분(욕설, ㅋㅋ·ㅠㅠ·초성체, 이모지, ^^, ;;)의 자리.
+ * 모델이 놓치더라도 이것들은 확실히 지운다.
+ * @returns {[number, number][]}
+ */
+export function ruleSpans(text) {
+  const spans = [];
+  for (const re of [RE_PROFANITY, RE_NOISE]) {
+    for (const match of text.matchAll(re)) spans.push([match.index, match.index + match[0].length]);
+  }
+  return spans;
+}
+
 // 욕설이 들어 있는지 (분류 모델이 짧은 욕설 댓글을 중립으로 볼 때 보정하는 데 쓴다)
 export function hasProfanity(text) {
   return RE_PROFANITY_ANY.test(text);

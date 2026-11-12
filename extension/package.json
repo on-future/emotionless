@@ -8,9 +8,10 @@
     "package": "node build.mjs && cd dist && rm -f ../store/emotionless-$npm_package_version.zip && zip -qr ../store/emotionless-$npm_package_version.zip . -x \"*.DS_Store\""
   },
   "dependencies": {
-    "@huggingface/transformers": "3.8.1"
+    "onnxruntime-web": "1.30.0"
   },
   "devDependencies": {
+    "@huggingface/transformers": "3.8.1",
     "esbuild": "^0.25.0"
   },
   "version": "1.0.0"

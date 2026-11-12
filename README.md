@@ -24,8 +24,12 @@
 
 1. 콘텐츠 스크립트가 페이지에서 댓글 목록을 찾습니다. 같은 모양으로 반복되는 블록과 `comment`, `reply`, `댓글` 같은 이름 단서를 함께 봅니다.
 2. 화면에 보이는(곧 보일) 댓글만 분류를 요청합니다.
-3. 오프스크린 문서에서 [KOTE](https://huggingface.co/searle-j/kote_for_easygoing_people) 감정 분류 모델을 Transformers.js(WebAssembly)로 실행합니다. 44개 감정 라벨을 8개 그룹으로 묶습니다.
-4. 규칙으로 감정 표현을 지운 글을 만들고, 원문 요소는 숨긴 채 옆에 순화본을 붙입니다.
+3. 오프스크린 문서에서 작은 모델 하나를 ONNX Runtime Web(WebAssembly)으로 실행합니다. 한 번 읽어 두 가지를 냅니다.
+   - 감정: 44개 감정 확률. 이를 8개 그룹으로 묶습니다.
+   - 지울 부분: 토큰마다 지울지 말지. 문맥을 보고 감정 표현만 고릅니다.
+4. 모델이 고른 부분과 늘 지우는 것(욕설, ㅋㅋ·ㅠㅠ, 이모지)을 지운 글을 만들고, 원문 요소는 숨긴 채 옆에 순화본을 붙입니다. 문장을 새로 쓰지 않고 지우기만 하므로 없는 말이 생기지 않습니다.
+
+모델은 [KcELECTRA-small](https://huggingface.co/beomi/KcELECTRA-small-v2022)(MIT)에서 출발해 직접 학습한 것으로, 약 17MB입니다. 토크나이저는 확장 안에 직접 구현했습니다(`extension/src/shared/wordpiece.js`).
 
 생성형 모델로 문장을 다시 쓰는 방식도 시험했지만 댓글당 수 초가 걸려 쓰지 않았습니다. 그 과정은 `experiments/` 에 남아 있습니다.
 
@@ -42,19 +46,20 @@
 
 ## 빌드
 
-Node.js 22 이상과 [uv](https://docs.astral.sh/uv/)가 필요합니다.
+Node.js 22 이상이 필요합니다.
+
+모델 파일은 저장소에 포함하지 않습니다. 비공개 학습 저장소에서 만든 `vocab.txt`, `emotionless.json`, `onnx/model_quantized.onnx` 를 `extension/models/student/` 에 넣은 뒤 빌드합니다.
 
 ```bash
 cd extension
 npm install
-./scripts/prepare-model.sh   # 모델을 내려받아 변환 (처음 한 번, 수 분 소요)
 npm run build                # dist/ 생성
 ```
 
 `chrome://extensions` 에서 개발자 모드를 켜고 "압축해제된 확장 프로그램을 로드합니다"로 `extension/dist` 폴더를 선택합니다.
 
 ```bash
-npm test          # 순화 규칙과 감정 묶음 로직 테스트
+npm test          # 토크나이저, 순화, 감정 묶음 로직 테스트
 npm run package   # 스토어 제출용 압축 파일을 store/ 에 생성
 ```
 
@@ -76,7 +81,7 @@ npm run package   # 스토어 제출용 압축 파일을 store/ 에 생성
 
 - 감정 묶음 기준은 소수의 예문으로 잡은 초기값이라 틀리는 경우가 있습니다. 비꼬는 말을 긍정으로 보기도 합니다.
 - 사이트 구조에 따라 댓글을 찾지 못하거나 다른 영역을 댓글로 잘못 볼 수 있습니다.
-- 모델이 포함되어 설치 용량이 약 150MB입니다.
+- 모델이 포함되어 설치 용량이 약 30MB입니다.
 
 ## 개인정보
 
@@ -84,4 +89,4 @@ npm run package   # 스토어 제출용 압축 파일을 store/ 에 생성
 
 ## 사용한 오픈소스
 
-KOTE 감정 분류 모델(MIT), Transformers.js(Apache-2.0), ONNX Runtime Web(MIT), Fluent Emoji(MIT). 자세한 내용은 [`extension/THIRD_PARTY_NOTICES.md`](extension/THIRD_PARTY_NOTICES.md)에 있습니다.
+KcELECTRA-small(MIT), KOTE 데이터셋과 감정 분류 모델(MIT, 학습에 사용), ONNX Runtime Web(MIT), Fluent Emoji(MIT). 자세한 내용은 [`extension/THIRD_PARTY_NOTICES.md`](extension/THIRD_PARTY_NOTICES.md)에 있습니다.
