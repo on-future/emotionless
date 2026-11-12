@@ -2,7 +2,7 @@
 import { findComments, selectorFromClick } from "./detect.js";
 import { renderComment, removeView, renderPill } from "./render.js";
 import { GROUPS } from "../shared/emotion.js";
-import { strip, isUnchanged } from "../shared/strip.js";
+import { strip, isUnchanged, hasProfanity } from "../shared/strip.js";
 
 const BATCH = 8;
 const MAX_CHARS = 300;
@@ -137,7 +137,8 @@ async function pump() {
           return;
         }
         const cleaned = strip(entry.original);
-        entry.group = groups[index];
+        // 욕설이 있는데 모델이 중립으로 본 댓글은 분노로 표시한다.
+        entry.group = groups[index] === "neutral" && hasProfanity(entry.original) ? "anger" : groups[index];
         entry.state = "done";
         entry.view = renderComment(
           textEl,

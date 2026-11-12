@@ -14,6 +14,10 @@ const INLINE = new Set(["SPAN", "B", "I", "EM", "STRONG", "BR", "FONT", "U", "S"
 // 확장이 넣은 요소와, 순화본으로 대체되어 숨겨진 원문 요소
 const OURS = ".eml-view, .eml-pill, [data-eml-hidden]";
 const MIN_TEXT = 6;
+// 숫자·기호·공백을 뺀 글자 수
+const letterCount = (text) => text.replace(/[\d\s\p{P}\p{S}]/gu, "").length;
+// 작성 시각처럼 보이는 글 (예: "11. 12 12:26:59 삭제")
+const DATE_LIKE = /\d{1,2}:\d{2}|\d{4}[.\-/]\s?\d{1,2}|\d{1,2}[.\-/]\s?\d{1,2}/;
 const MAX_TEXT = 3000;
 
 const hintOf = (el) =>
@@ -55,12 +59,17 @@ function findTextEl(item, itemSet) {
   });
   for (let el = walker.currentNode; el; el = walker.nextNode()) {
     const text = ownText(el);
-    if (text.length < MIN_TEXT || text.length > MAX_TEXT) continue;
+    if (!text || text.length > MAX_TEXT) continue;
+    const letters = letterCount(text);
     const cls = typeof el.className === "string" ? el.className : "";
-    if (!hinted && el !== item && (TEXT_HINT.test(cls) || TEXT_HINT.test(el.id || ""))) hinted = el;
-    if (text.length > bestLen) {
+    // 이름으로 본문임이 드러나는 요소는 아주 짧은 댓글이어도 본문으로 본다.
+    if (!hinted && el !== item && letters > 0 && (TEXT_HINT.test(cls) || TEXT_HINT.test(el.id || ""))) hinted = el;
+    if (text.length < MIN_TEXT) continue;
+    // 날짜·시각 칸은 본문이 아니다.
+    if (DATE_LIKE.test(text) && letters < 6) continue;
+    if (letters > bestLen) {
       best = el;
-      bestLen = text.length;
+      bestLen = letters;
     }
   }
   return hinted ?? best;

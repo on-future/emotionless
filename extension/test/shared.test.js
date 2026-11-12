@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { strip, isUnchanged } from "../src/shared/strip.js";
+import { strip, isUnchanged, hasProfanity } from "../src/shared/strip.js";
 import { classify } from "../src/shared/emotion.js";
 
 test("strip: 욕설·ㅋㅋ·강조어를 지우고 사실은 남긴다", () => {
@@ -42,6 +42,17 @@ test("strip: 중립 문장은 그대로 둔다", () => {
 test("strip: 감정 표현뿐인 글은 빈 문자열이 된다", () => {
   assert.equal(strip("ㅋㅋㅋㅋㅋㅋ"), "");
   assert.equal(strip("헐 대박!!!"), "");
+});
+
+test("strip: 욕설에 붙은 말까지 지워 조각을 남기지 않는다", () => {
+  assert.equal(strip("병신년 ㅋ"), "");
+  assert.equal(strip("저 병신같은 운영 때문에 접는다"), "저 운영 때문에 접는다.");
+});
+
+test("hasProfanity: 욕설과 초성 욕을 찾는다", () => {
+  assert.equal(hasProfanity("병신년 ㅋ"), true);
+  assert.equal(hasProfanity("ㅅㅂ 또 점검이네"), true);
+  assert.equal(hasProfanity("이번 패치는 괜찮은 것 같습니다"), false);
 });
 
 test("strip: 단어 일부로 쓰인 말은 지우지 않는다", () => {

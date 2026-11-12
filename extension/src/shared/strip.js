@@ -24,7 +24,8 @@ const LEADING = ["아니", "아 네", "아", "와", "어휴", "에휴", "하", "
 const TAILS = ["최악", "역겹다", "눈물남", "답답해 죽겠네", "수준 알만하다", "어이없네", "극혐"];
 
 const MARK = "\u0001";
-const RE_PROFANITY = new RegExp(PROFANITY.join("|"), "g");
+// 욕설 뒤에 붙는 말(년, 놈, 같은 등)까지 함께 지워 조각이 남지 않게 한다.
+const RE_PROFANITY = new RegExp(`(?:${PROFANITY.join("|")})(?:년|놈|새끼|들|아|같은|같이|같네|이네|이냐)*`, "g");
 const RE_INTENS = standalone(INTENSIFIERS);
 const RE_LEADING = new RegExp(`^(?:(?:${LEADING.join("|")})(?![${H}])[\\s,]*)+`);
 const RE_TAIL = new RegExp(`(?:^|\\s+)(?:${TAILS.join("|")})$`);
@@ -52,6 +53,11 @@ export function strip(text) {
     parts.push(body + (end || "."));
   }
   return parts.join(" ");
+}
+
+// 욕설이 들어 있는지 (분류 모델이 짧은 욕설 댓글을 중립으로 볼 때 보정하는 데 쓴다)
+export function hasProfanity(text) {
+  return new RegExp(PROFANITY.join("|")).test(text) || /ㅅㅂ|ㅆㅂ|ㅂㅅ|ㅈㄴ|ㅈㄹ|ㅁㅊ/.test(text);
 }
 
 const normalize = (t) => t.replace(/\s+/g, " ").trim().replace(/[.]$/, "");
