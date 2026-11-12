@@ -1,6 +1,8 @@
 // 콘텐츠 스크립트: 댓글을 찾아 두고, 화면에 보이는(곧 보일) 댓글만 분류해 표시한다.
-import { findComments, selectorFromClick } from "./detect.js";
+// 설정이 바뀌면 새로 고침 없이 바로 반영한다.
+import { findComments } from "./detect.js";
 import { renderComment, removeView, renderPill, measure, syncTypography, fixClipping } from "./render.js";
+import { startPicker, stopPicker } from "./picker.js";
 import { GROUPS } from "../shared/emotion.js";
 import { strip, isUnchanged, hasProfanity } from "../shared/strip.js";
 
@@ -9,35 +11,49 @@ const MAX_CHARS = 300;
 // 화면 위아래로 이만큼 떨어진 댓글까지 미리 처리해, 스크롤했을 때 원문이 보이지 않게 한다.
 const PRELOAD_MARGIN = "400px 0px 800px 0px";
 const PENDING_TIMEOUT_MS = 8000;
+const CACHE_LIMIT = 3000;
 const HANGUL = /[가-힣]/;
 
+const DEFAULTS = { enabled: true, fold: true, showPill: true, pillCollapsed: false, disabledHosts: [], selectors: {} };
+const isTop = window === window.top;
+// 댓글 위치는 댓글이 실제로 있는 문서(프레임)의 주소로 기억한다.
 const host = location.hostname;
-let settings = { enabled: true, fold: true, pillCollapsed: false, disabledHosts: [], selectors: {} };
+// 사이트별 켜기/끄기는 사용자가 보고 있는 탭의 주소를 따른다.
+const siteHost = (() => {
+  if (isTop) return host;
+  try {
+    const origins = location.ancestorOrigins;
+    if (origins?.length) return new URL(origins[origins.length - 1]).hostname;
+  } catch {}
+  return host;
+})();
+
+let settings = { ...DEFAULTS };
+let running = false;
 // textEl -> { item, original, raw, group, view, state: "waiting" | "queued" | "done" }
 const tracked = new Map();
 const queue = [];
+// 같은 글을 다시 분류하지 않도록 결과를 기억한다 (설정을 바꿔 다시 그릴 때, 사이트가 요소를 재사용할 때).
+const groupCache = new Map();
 let scanTimer = null;
+let themeTimer = null;
 let pumping = false;
 let visibility = null;
-// 분류에 걸린 시간 누계 (요약 요소의 data 속성으로 노출해 확인용으로 쓴다)
-const stats = { ms: 0, count: 0, threads: 0 };
+let domObserver = null;
+let themeObserver = null;
 
+const isActive = () => settings.enabled && !settings.disabledHosts.includes(siteHost);
 const rawText = (el) => (el.textContent ?? "").replace(/\s+/g, " ").trim();
 const readText = (el) => (el.innerText ?? el.textContent ?? "").replace(/\s+/g, " ").trim();
 
-function classify(texts) {
+function requestGroups(texts) {
   return new Promise((resolve) => {
     try {
       chrome.runtime.sendMessage({ type: "classify", texts }, (res) => {
         if (chrome.runtime.lastError || !res || res.error) {
           console.warn("[emotionless] 분류 실패:", chrome.runtime.lastError?.message ?? res?.error);
           resolve(null);
-        } else {
-          stats.threads = res.threads;
-          stats.ms += res.ms;
-          stats.count += texts.length;
-          resolve(res.groups);
-        }
+        } else resolve(res.groups);
       });
     } catch (err) {
       console.warn("[emotionless] 분류 요청 실패:", err);
@@ -46,10 +62,26 @@ function classify(texts) {
   });
 }
 
+async function classify(texts) {
+  const missing = [...new Set(texts.filter((text) => !groupCache.has(text)))];
+  if (missing.length) {
+    const groups = await requestGroups(missing);
+    if (!groups) return null;
+    missing.forEach((text, index) => groupCache.set(text, groups[index]));
+    // 오래된 것부터 덜어 낸다.
+    for (const key of groupCache.keys()) {
+      if (groupCache.size <= CACHE_LIMIT) break;
+      groupCache.delete(key);
+    }
+  }
+  return texts.map((text) => groupCache.get(text));
+}
+
+// ── 반응 요약 ────────────────────────────────────────────────────────────
 // 감정별 댓글 수는 화면 구석에 떠 있는 요약 하나에 모은다. 페이지 흐름 밖에 있어 댓글을 밀어내지 않는다.
-// 프레임 안의 댓글 수는 맨 위 페이지로 보내 합친다.
+// 프레임 안의 댓글 수와 직접 지정 여부는 맨 위 페이지로 보내 합친다.
 const COUNT_MSG = "__emotionless_counts";
-const frameCounts = new Map();
+const frameInfo = new Map();
 
 function localCounts() {
   const counts = {};
@@ -57,12 +89,17 @@ function localCounts() {
   return counts;
 }
 
-function showPill() {
+function totalCounts() {
   const total = localCounts();
-  for (const counts of frameCounts.values()) {
+  for (const { counts } of frameInfo.values()) {
     for (const [group, count] of Object.entries(counts)) total[group] = (total[group] ?? 0) + count;
   }
-  renderPill(total, settings.pillCollapsed, () => {
+  return total;
+}
+
+function showPill() {
+  const visible = isActive() && settings.showPill;
+  renderPill(visible ? totalCounts() : {}, settings.pillCollapsed, () => {
     settings.pillCollapsed = !settings.pillCollapsed;
     chrome.storage.local.set({ pillCollapsed: settings.pillCollapsed });
     showPill();
@@ -70,28 +107,41 @@ function showPill() {
 }
 
 function publishCounts() {
-  if (window === window.top) showPill();
-  else window.top.postMessage({ type: COUNT_MSG, counts: localCounts() }, "*");
+  if (isTop) showPill();
+  else {
+    const customHost = settings.selectors[host] ? host : null;
+    window.top.postMessage({ type: COUNT_MSG, counts: localCounts(), customHost }, "*");
+  }
 }
 
 function onFrameCounts(event) {
   if (event.data?.type !== COUNT_MSG || !event.source || typeof event.data.counts !== "object") return;
-  const clean = {};
+  const counts = {};
   for (const group of Object.keys(GROUPS)) {
     const count = event.data.counts?.[group];
-    if (Number.isInteger(count) && count > 0 && count < 100000) clean[group] = count;
+    if (Number.isInteger(count) && count > 0 && count < 100000) counts[group] = count;
   }
-  frameCounts.set(event.source, clean);
+  const customHost = typeof event.data.customHost === "string" ? event.data.customHost.slice(0, 255) : null;
+  frameInfo.set(event.source, { counts, customHost });
   showPill();
 }
 
+// 팝업이 물어볼 때 알려 주는 현재 페이지의 상태
+function pageStatus() {
+  const customHosts = new Set();
+  if (settings.selectors[host]) customHosts.add(host);
+  for (const { customHost } of frameInfo.values()) if (customHost) customHosts.add(customHost);
+  return { host: siteHost, active: isActive(), counts: isActive() ? totalCounts() : {}, customHosts: [...customHosts] };
+}
+
+// ── 프레임 높이 ──────────────────────────────────────────────────────────
 // 댓글이 높이가 고정된 프레임 안에 있으면, 순화본 때문에 늘어난 높이만큼 프레임이 잘린다.
 // 프레임 안쪽에서 필요한 높이를 알리고, 바깥쪽에서 그 프레임을 키운다.
 const FRAME_MSG = "__emotionless_frame_height";
 let reportedHeight = 0;
 
 function reportFrameHeight() {
-  if (window === window.top) return;
+  if (isTop) return;
   requestAnimationFrame(() => {
     const height = Math.ceil(Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0));
     if (height === reportedHeight) return;
@@ -110,10 +160,16 @@ function growChildFrame(event) {
   if (height > current + 1 && height < current + 20000) frame.style.setProperty("height", `${height}px`, "important");
 }
 
+// ── 댓글 처리 ────────────────────────────────────────────────────────────
 function forget(textEl, entry) {
-  visibility.unobserve(textEl);
+  visibility?.unobserve(textEl);
   removeView(textEl, entry.view);
   tracked.delete(textEl);
+}
+
+function forgetAll() {
+  for (const [textEl, entry] of tracked) forget(textEl, entry);
+  queue.length = 0;
 }
 
 // 대기열을 비운다. 가장 최근에 화면에 들어온 댓글부터 처리한다.
@@ -128,6 +184,8 @@ async function pump() {
         .filter((textEl) => textEl.isConnected && tracked.get(textEl)?.state === "queued");
       if (!batch.length) continue;
       const groups = await classify(batch.map((textEl) => tracked.get(textEl).original.slice(0, MAX_CHARS)));
+      // 기다리는 동안 꺼졌으면 아무것도 그리지 않는다.
+      if (!running) break;
       // 읽기를 먼저 끝내고 쓰기를 몰아서 한다.
       const metrics = batch.map((textEl) => {
         const entry = tracked.get(textEl);
@@ -137,7 +195,7 @@ async function pump() {
       batch.forEach((textEl, index) => {
         const entry = tracked.get(textEl);
         textEl.removeAttribute("data-eml-pending");
-        if (!entry) return;
+        if (!entry || entry.state === "done") return;
         if (!metrics[index]) {
           forget(textEl, entry);
           return;
@@ -146,6 +204,7 @@ async function pump() {
         // 욕설이 있는데 모델이 중립으로 본 댓글은 분노로 표시한다.
         entry.group = groups[index] === "neutral" && hasProfanity(entry.original) ? "anger" : groups[index];
         entry.state = "done";
+        visibility.unobserve(textEl);
         const data = {
           group: entry.group,
           original: entry.original,
@@ -192,6 +251,7 @@ function onVisible(entries) {
 }
 
 function scan() {
+  if (!running) return;
   // 사라졌거나 내용이 바뀐 댓글 정리 (사이트가 요소를 재사용하는 경우)
   for (const [textEl, entry] of tracked) {
     const stale = !textEl.isConnected || rawText(textEl) !== entry.raw || (entry.view && !entry.view.isConnected);
@@ -208,8 +268,12 @@ function scan() {
   }
 }
 
+function scheduleScan() {
+  clearTimeout(scanTimer);
+  scanTimer = setTimeout(scan, 300);
+}
+
 // 사이트 테마가 바뀌면 순화본에 옮겨 둔 글자색을 다시 맞춘다.
-let themeTimer = null;
 function scheduleThemeSync() {
   clearTimeout(themeTimer);
   themeTimer = setTimeout(() => {
@@ -219,63 +283,97 @@ function scheduleThemeSync() {
   }, 300);
 }
 
-function scheduleScan() {
-  clearTimeout(scanTimer);
-  scanTimer = setTimeout(scan, 300);
+// ── 켜기 / 끄기 ──────────────────────────────────────────────────────────
+function start() {
+  if (running) return;
+  running = true;
+  visibility = new IntersectionObserver(onVisible, { rootMargin: PRELOAD_MARGIN });
+  domObserver = new MutationObserver((mutations) => {
+    // 우리가 넣은 요소로 인한 변화는 무시한다.
+    const external = mutations.some((m) => {
+      const target = m.target.nodeType === Node.ELEMENT_NODE ? m.target : m.target.parentElement;
+      return target && !target.closest(".eml-view, .eml-pill, .eml-picker-banner");
+    });
+    if (external) scheduleScan();
+  });
+  domObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
+  // 테마 전환은 보통 html 이나 body 의 속성을 바꾸거나, 시스템 설정을 따라간다.
+  themeObserver = new MutationObserver(scheduleThemeSync);
+  const themeAttributes = {
+    attributes: true,
+    attributeFilter: ["class", "style", "dark", "data-theme", "data-color-mode", "theme"],
+  };
+  themeObserver.observe(document.documentElement, themeAttributes);
+  themeObserver.observe(document.body, themeAttributes);
+  scan();
+  publishCounts();
 }
 
-function startPicker() {
-  const banner = document.createElement("div");
-  banner.className = "eml-picker-banner";
-  banner.textContent = "emotionless: 댓글 하나를 클릭하세요 (Esc로 취소)";
-  document.documentElement.append(banner);
-  let hovered = null;
+function stop() {
+  if (!running) return;
+  running = false;
+  clearTimeout(scanTimer);
+  clearTimeout(themeTimer);
+  domObserver.disconnect();
+  themeObserver.disconnect();
+  forgetAll();
+  visibility.disconnect();
+  stopPicker();
+  publishCounts();
+}
 
-  const clear = () => hovered?.removeAttribute("data-eml-pick");
-  const stopPicking = () => {
-    clear();
-    banner.remove();
-    document.removeEventListener("mouseover", onOver, true);
-    document.removeEventListener("click", onClick, true);
-    document.removeEventListener("keydown", onKey, true);
-  };
-  const onOver = (event) => {
-    clear();
-    hovered = event.target;
-    hovered.setAttribute("data-eml-pick", "");
-  };
-  const onKey = (event) => {
-    if (event.key === "Escape") stopPicking();
-  };
-  const onClick = (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const selector = selectorFromClick(event.target);
-    stopPicking();
-    if (!selector) return;
-    settings.selectors = { ...settings.selectors, [host]: selector };
-    chrome.storage.local.set({ selectors: settings.selectors });
-    for (const [textEl, entry] of tracked) forget(textEl, entry);
-    queue.length = 0;
-    scan();
-  };
-  document.addEventListener("mouseover", onOver, true);
-  document.addEventListener("click", onClick, true);
-  document.addEventListener("keydown", onKey, true);
+// 표시 방식이 바뀌었을 때 처음부터 다시 그린다. 분류 결과는 기억하고 있어 바로 끝난다.
+function rerender() {
+  forgetAll();
+  scan();
+  publishCounts();
+}
+
+function onSettingsChanged(changes, area) {
+  if (area !== "local") return;
+  const wasActive = isActive();
+  const previous = settings;
+  const next = { ...settings };
+  for (const key of Object.keys(DEFAULTS)) if (key in changes) next[key] = changes[key].newValue ?? DEFAULTS[key];
+  settings = next;
+
+  if (isActive() !== wasActive) {
+    if (isActive()) start();
+    else stop();
+    return;
+  }
+  if (!running) return;
+  const locationChanged = previous.selectors[host] !== settings.selectors[host];
+  if (previous.fold !== settings.fold || locationChanged) rerender();
+  else publishCounts();
+}
+
+function onMessage(msg, _sender, sendResponse) {
+  if (msg?.type === "status") {
+    // 탭 전체의 상태는 맨 위 페이지만 알고 있다.
+    if (isTop) sendResponse(pageStatus());
+    return false;
+  }
+  if (msg?.type === "pick" && running) {
+    startPicker((selector) => {
+      // 저장하면 onSettingsChanged 가 불려 새 위치로 다시 그린다.
+      chrome.storage.local.set({ selectors: { ...settings.selectors, [host]: selector } });
+    });
+  } else if (msg?.type === "pick-stop") {
+    stopPicker(msg.cancelled !== true);
+  }
+  return false;
 }
 
 async function main() {
-  settings = { ...settings, ...(await chrome.storage.local.get(Object.keys(settings))) };
-  if (!settings.enabled || settings.disabledHosts.includes(host)) return;
+  settings = { ...DEFAULTS, ...(await chrome.storage.local.get(Object.keys(DEFAULTS))) };
 
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (msg?.type === "pick" && window === window.top) startPicker();
-  });
-
+  chrome.storage.onChanged.addListener(onSettingsChanged);
+  chrome.runtime.onMessage.addListener(onMessage);
   window.addEventListener("message", growChildFrame);
-  if (window === window.top) window.addEventListener("message", onFrameCounts);
-  // 접기·펼치기로 높이가 바뀔 때도 알린다.
-  // 버튼이 이벤트 전파를 막으므로 캡처 단계에서 듣는다.
+  if (isTop) window.addEventListener("message", onFrameCounts);
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", scheduleThemeSync);
+  // 접기·펼치기로 높이가 바뀔 때도 알린다. 버튼이 이벤트 전파를 막으므로 캡처 단계에서 듣는다.
   document.addEventListener(
     "click",
     (event) => {
@@ -283,24 +381,8 @@ async function main() {
     },
     true,
   );
-  visibility = new IntersectionObserver(onVisible, { rootMargin: PRELOAD_MARGIN });
-  const observer = new MutationObserver((mutations) => {
-    // 우리가 넣은 요소로 인한 변화는 무시한다.
-    const external = mutations.some((m) => {
-      const target = m.target.nodeType === Node.ELEMENT_NODE ? m.target : m.target.parentElement;
-      return target && !target.closest(".eml-view, .eml-pill");
-    });
-    if (external) scheduleScan();
-  });
-  observer.observe(document.body, { childList: true, subtree: true, characterData: true });
 
-  // 테마 전환은 보통 html 이나 body 의 속성을 바꾸거나, 시스템 설정을 따라간다.
-  const themeObserver = new MutationObserver(scheduleThemeSync);
-  const themeAttributes = { attributes: true, attributeFilter: ["class", "style", "dark", "data-theme", "data-color-mode", "theme"] };
-  themeObserver.observe(document.documentElement, themeAttributes);
-  themeObserver.observe(document.body, themeAttributes);
-  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", scheduleThemeSync);
-  scan();
+  if (isActive()) start();
 }
 
 main();

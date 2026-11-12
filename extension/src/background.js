@@ -14,7 +14,12 @@ async function ensureOffscreen() {
   await creating;
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  // 댓글 위치 지정이 한 프레임에서 끝나면, 같은 탭의 다른 프레임에도 알려 함께 끝낸다.
+  if (msg?.type === "pick-done" && sender.tab?.id != null) {
+    chrome.tabs.sendMessage(sender.tab.id, { type: "pick-stop", cancelled: msg.cancelled === true }).catch(() => {});
+    return false;
+  }
   if (msg?.type !== "classify" || msg.target === "offscreen") return false;
   (async () => {
     try {

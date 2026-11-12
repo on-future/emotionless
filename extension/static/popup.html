@@ -2,26 +2,89 @@
 <html lang="ko">
   <head>
     <meta charset="utf-8" />
-    <title>emotionless</title>
-    <style>
-      body { margin: 0; width: 260px; padding: 14px; font: 14px/1.5 system-ui, sans-serif; color: #1c1c1a; background: #fff; }
-      h1 { margin: 0 0 10px; font-size: 15px; }
-      label { display: flex; align-items: center; gap: 8px; min-height: 32px; cursor: pointer; }
-      .host { color: #5f5f5a; font-size: 12px; margin: 8px 0 2px; overflow-wrap: anywhere; }
-      button { font: inherit; margin-top: 8px; width: 100%; min-height: 34px; border: 1px solid #c9c9c4; border-radius: 6px; background: #f7f7f5; cursor: pointer; }
-      button:disabled { opacity: 0.5; cursor: default; }
-      .note { color: #5f5f5a; font-size: 12px; margin-top: 10px; }
-    </style>
+    <title>Emotionless</title>
+    <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
-    <h1>emotionless</h1>
-    <label><input type="checkbox" id="enabled" /> 모든 사이트에서 사용</label>
-    <label><input type="checkbox" id="fold" /> 분노·비난 댓글 접기</label>
-    <div class="host" id="host"></div>
-    <label><input type="checkbox" id="site" /> 이 사이트에서 사용</label>
-    <button id="pick" type="button">댓글 직접 지정</button>
-    <button id="reset" type="button">이 사이트 지정 초기화</button>
-    <div class="note">설정을 바꾸면 현재 탭을 새로 고칩니다.</div>
+    <header class="top">
+      <img class="logo" src="icons/icon128.png" alt="" />
+      <h1>Emotionless</h1>
+      <label class="switch" title="모든 사이트에서 켜거나 끕니다">
+        <input type="checkbox" role="switch" id="enabled" aria-label="Emotionless 켜기" />
+        <span class="track"><span class="thumb"></span></span>
+      </label>
+    </header>
+
+    <!-- 이 페이지의 분위기: 가장 많은 감정과 분포 -->
+    <section class="mood" id="mood" aria-live="polite">
+      <div class="mood-head">
+        <img class="mood-face" id="moodFace" alt="" />
+        <div class="mood-text">
+          <p class="mood-title" id="moodTitle"></p>
+          <p class="mood-sub" id="moodSub"></p>
+        </div>
+      </div>
+      <div class="bar" id="bar" role="img" hidden></div>
+      <ul class="chips" id="chips" hidden></ul>
+      <button class="btn btn-primary" id="reload" type="button" hidden>새로 고침</button>
+    </section>
+
+    <div id="controls">
+      <section class="group" id="siteGroup">
+        <label class="row">
+          <span class="row-text">
+            <span class="row-title">이 사이트에서 사용</span>
+            <span class="row-sub" id="host"></span>
+          </span>
+          <span class="switch">
+            <input type="checkbox" role="switch" id="site" />
+            <span class="track"><span class="thumb"></span></span>
+          </span>
+        </label>
+      </section>
+
+      <section class="group">
+        <label class="row">
+          <span class="row-text">
+            <span class="row-title">분노·비난 댓글 접기</span>
+            <span class="row-sub">한 줄로 접어 두고, 누르면 펼쳐요.</span>
+          </span>
+          <span class="switch">
+            <input type="checkbox" role="switch" id="fold" />
+            <span class="track"><span class="thumb"></span></span>
+          </span>
+        </label>
+        <label class="row">
+          <span class="row-text">
+            <span class="row-title">화면 구석에 반응 요약 띄우기</span>
+            <span class="row-sub">지금까지 본 댓글의 감정 분포를 보여 줘요.</span>
+          </span>
+          <span class="switch">
+            <input type="checkbox" role="switch" id="showPill" />
+            <span class="track"><span class="thumb"></span></span>
+          </span>
+        </label>
+      </section>
+
+      <section class="group" id="locationGroup">
+        <div class="row">
+          <span class="row-text">
+            <span class="row-title">댓글 위치</span>
+            <span class="row-sub" id="locationSub"></span>
+          </span>
+        </div>
+        <div class="actions">
+          <button class="btn" id="pick" type="button">직접 지정</button>
+          <button class="btn btn-quiet" id="resetPick" type="button" hidden>자동으로 되돌리기</button>
+        </div>
+      </section>
+    </div>
+
+    <footer class="foot">
+      <a href="https://on-future.github.io/emotionless/support.html" target="_blank" rel="noopener">도움말</a>
+      <span id="version"></span>
+    </footer>
+
     <script src="popup.js"></script>
   </body>
 </html>

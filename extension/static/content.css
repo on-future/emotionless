@@ -1,7 +1,13 @@
 /* emotionless 가 페이지에 넣는 요소의 스타일. 사이트 글꼴과 색을 그대로 따른다. */
 [data-eml-hidden] { display: none !important; }
 [data-eml-pending] { filter: blur(5px); transition: filter 0.15s; }
-[data-eml-pick] { outline: 2px solid #2456c8 !important; outline-offset: 2px; cursor: crosshair !important; }
+[data-eml-pick] {
+  outline: 2px solid #2b5fd9 !important;
+  outline-offset: 2px;
+  background-color: rgba(43, 95, 217, 0.1) !important;
+  cursor: pointer !important;
+}
+[data-eml-picking], [data-eml-picking] * { cursor: crosshair !important; }
 
 /* 순화본은 원문 요소와 같은 태그·클래스를 쓰므로 폭과 여백은 사이트 스타일을 따른다. */
 .eml-view { overflow-wrap: anywhere; }
@@ -121,17 +127,25 @@
 @media print { .eml-pill { display: none; } }
 
 .eml-picker-banner {
+  all: initial;
   position: fixed;
-  top: 12px;
+  top: 16px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 2147483647;
-  padding: 8px 14px;
-  border-radius: 8px;
-  background: #1c1c1a;
+  box-sizing: border-box;
+  max-width: calc(100vw - 32px);
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: #1b2330;
   color: #fff;
-  font: 14px/1.4 system-ui, sans-serif;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+  font: 500 14px/1.45 system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif;
+  text-align: center;
   pointer-events: none;
 }
+.eml-picker-banner[data-tone="ready"] { background: #2b5fd9; }
+.eml-picker-banner[data-tone="done"] { background: #1f8a4c; }
+.eml-picker-banner[data-tone="none"] { background: #5c6676; }
 
 .eml-text a { color: inherit; text-decoration: underline; }
