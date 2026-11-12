@@ -34,25 +34,35 @@ const RE_NOISE = /[ㄱ-ㅎㅏ-ㅣ]+|[\p{Extended_Pictographic}️‍]+|\^\^+|;;+
 const RE_WORDCHAR = `${H}0-9A-Za-z`;
 const RE_MARK_BETWEEN = new RegExp(`([${RE_WORDCHAR}])\\s*${MARK}+\\s*(?=[${RE_WORDCHAR}])`, "g");
 
+// 주소는 건드리지 않도록 잠시 빼 두었다가 마지막에 되돌린다.
+const RE_URL = /https?:\/\/[^\s<>"']+/g;
+const HOLD = "\u0002";
+
 export function strip(text) {
-  let s = text.replace(/\s+/g, " ").trim();
+  const urls = [];
+  let s = text
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(RE_URL, (url) => `${HOLD}${urls.push(url) - 1}${HOLD}`);
   // 글 중간의 ㅋㅋ·ㅠㅠ 는 문장 경계 역할을 하므로 마침표로 바꾼다.
   s = s.replace(RE_NOISE, MARK).replace(RE_MARK_BETWEEN, "$1. ").replaceAll(MARK, " ");
   s = s.replace(RE_PROFANITY, " ");
   for (const [re, to] of REPLACEMENTS) s = s.replace(re, to);
   s = s.replace(RE_INTENS, " ");
-  s = s.replace(/~+/g, " ").replace(/!+/g, ".").replace(/\?[?!.]*/g, "?").replace(/\.{2,}|…+/g, ".");
+  s = s.replace(/~+/g, " ").replace(/!+/g, ". ").replace(/\?[?!.]*/g, "?").replace(/\.{2,}|…+/g, ".");
 
   const parts = [];
-  for (const raw of s.split(/(?<=[.?])\s*/)) {
+  // 마침표 뒤에 공백이 있을 때만 문장 끝으로 본다 ("3.5점", "11.12" 는 그대로 둔다).
+  for (const raw of s.split(/(?<=[.?])\s+/)) {
     const end = /[.?]$/.test(raw) ? raw.at(-1) : "";
     let body = (end ? raw.slice(0, -1) : raw).replace(/\s+/g, " ").trim();
     body = body.replace(RE_LEADING, "").trim();
     body = body.replace(RE_TAIL, "").trim();
-    if (!new RegExp(`[${RE_WORDCHAR}]`).test(body)) continue;
-    parts.push(body + (end || "."));
+    if (!new RegExp(`[${RE_WORDCHAR}${HOLD}]`).test(body)) continue;
+    // 주소로 끝나는 문장에는 마침표를 붙이지 않는다.
+    parts.push(body + (end || (body.endsWith(HOLD) ? "" : ".")));
   }
-  return parts.join(" ");
+  return parts.join(" ").replace(new RegExp(`${HOLD}(\\d+)${HOLD}`, "g"), (_, i) => urls[Number(i)]);
 }
 
 // 욕설이 들어 있는지 (분류 모델이 짧은 욕설 댓글을 중립으로 볼 때 보정하는 데 쓴다)

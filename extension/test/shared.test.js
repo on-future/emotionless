@@ -55,6 +55,14 @@ test("hasProfanity: 욕설과 초성 욕을 찾는다", () => {
   assert.equal(hasProfanity("이번 패치는 괜찮은 것 같습니다"), false);
 });
 
+test("strip: 주소와 소수점은 건드리지 않는다", () => {
+  const withUrl = "지금 넷플릭스에서 시청하세요: https://www.netflix.com/title/81653386";
+  assert.equal(strip(withUrl), withUrl);
+  assert.ok(isUnchanged(withUrl, strip(withUrl)));
+  assert.equal(strip("평점 3.5점인데 진짜 재밌음ㅋㅋ"), "평점 3.5점인데 재밌음.");
+  assert.equal(strip("와!!!대박 https://example.com/a.b?c=1 여기 봐"), "https://example.com/a.b?c=1 여기 봐.");
+});
+
 test("strip: 단어 일부로 쓰인 말은 지우지 않는다", () => {
   assert.equal(strip("아니라고 생각합니다"), "아니라고 생각합니다.");
   assert.equal(strip("참여 신청은 내일까지입니다"), "참여 신청은 내일까지입니다.");

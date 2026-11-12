@@ -22,7 +22,29 @@ function shellLike(textEl) {
   shell.className = `${typeof textEl.className === "string" ? textEl.className : ""} eml-view`.trim();
   const inline = textEl.getAttribute("style");
   if (inline) shell.setAttribute("style", inline);
+  // 글꼴은 태그나 id 로 지정된 경우가 많아 클래스만으로는 물려받지 못한다. 원문의 실제 값을 옮긴다.
+  const computed = getComputedStyle(textEl);
+  for (const prop of ["fontFamily", "fontSize", "fontWeight", "lineHeight", "letterSpacing", "color"]) {
+    shell.style[prop] = computed[prop];
+  }
+  if (computed.display === "inline" || tag !== textEl.tagName.toLowerCase()) shell.style.display = "block";
   return shell;
+}
+
+// 글 속의 주소는 누를 수 있는 링크로 만든다.
+function setLinkedText(node, value) {
+  const parts = value.split(/(https?:\/\/[^\s<>"']+)/g);
+  node.replaceChildren(
+    ...parts.filter(Boolean).map((part) => {
+      if (!/^https?:\/\//.test(part)) return document.createTextNode(part);
+      const link = document.createElement("a");
+      link.href = part;
+      link.textContent = part;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      return link;
+    }),
+  );
 }
 
 const el = (tag, className, text) => {
@@ -39,6 +61,12 @@ const el = (tag, className, text) => {
  */
 export function renderComment(textEl, data, settings) {
   const info = GROUPS[data.group];
+  // 지울 것이 없고 접지도 않는 댓글은 원문 요소를 그대로 두고 꾸미기만 한다.
+  // 링크, 타임스탬프, "자세히 보기" 같은 사이트 기능이 그대로 살아 있다.
+  if (!data.changed && !(settings.fold && info.fold)) {
+    decorateInPlace(textEl, data.group);
+    return null;
+  }
   const view = shellLike(textEl);
   view.dataset.emlGroup = data.group;
 
@@ -67,7 +95,7 @@ export function renderComment(textEl, data, settings) {
     row.hidden = state.folded;
     actions.hidden = state.folded || !actions.childElementCount;
     const shown = state.showOriginal ? data.original : data.cleaned;
-    text.textContent = shown || "(감정 표현만 있는 댓글)";
+    setLinkedText(text, shown || "(감정 표현만 있는 댓글)");
     text.classList.toggle("eml-empty", !shown);
     origBtn.textContent = state.showOriginal ? "순화본 보기" : "원문 보기";
   };
@@ -90,8 +118,22 @@ export function renderComment(textEl, data, settings) {
   return view;
 }
 
+function decorateInPlace(textEl, group) {
+  if (getComputedStyle(textEl).display === "inline") textEl.setAttribute("data-eml-block", "");
+  textEl.setAttribute("data-eml-inplace", "");
+  textEl.setAttribute("data-eml-group", group);
+  textEl.title = GROUPS[group].label;
+  try {
+    textEl.style.setProperty("--eml-emoji", `url("${chrome.runtime.getURL(`emoji/${group}.png`)}")`);
+  } catch {}
+}
+
 export function removeView(textEl, view) {
   view?.remove();
+  if (textEl.hasAttribute("data-eml-inplace")) {
+    for (const attr of ["data-eml-inplace", "data-eml-group", "data-eml-block", "title"]) textEl.removeAttribute(attr);
+    textEl.style.removeProperty("--eml-emoji");
+  }
   textEl.removeAttribute("data-eml-hidden");
   textEl.removeAttribute("data-eml-pending");
 }

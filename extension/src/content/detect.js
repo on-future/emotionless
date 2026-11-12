@@ -3,6 +3,13 @@
 const HINT = /comment|cmt|reply|replies|review|discuss|thread|댓글|답글|덧글|리플/i;
 const TEXT_HINT = /content|contents|text|txt|body|message|msg|desc|usertxt/i;
 const HANGUL = /[가-힣]/;
+// 본문이 아닌 칸(작성자, 날짜, 배지, 버튼 줄 등)에 흔히 붙는 이름
+const NOT_TEXT_HINT = /badge|pinned|label|author|nick|name|date|time|meta|head|count|like|vote|action|toolbar|button|btn/i;
+// 구조가 특이해 자동 감지가 어긋나는 주요 사이트는 위치를 정해 둔다.
+const SITE_RULES = {
+  "www.youtube.com": { item: "ytd-comment-view-model, ytd-comment-renderer", text: "#content-text" },
+  "m.youtube.com": { item: "ytm-comment-renderer", text: ".comment-text" },
+};
 // 댓글 항목이 될 수 없는 태그 (본문 안의 문단, 인라인 요소 등)
 const NOT_ITEM = new Set([
   "P", "SPAN", "A", "BR", "B", "I", "EM", "STRONG", "IMG", "BUTTON", "INPUT", "SCRIPT", "STYLE",
@@ -45,6 +52,12 @@ function ownText(el) {
   return out.replace(/\s+/g, " ").trim();
 }
 
+function isNotText(el) {
+  const cls = typeof el.className === "string" ? el.className : "";
+  const name = `${cls} ${el.id || ""}`;
+  return NOT_TEXT_HINT.test(name) && !TEXT_HINT.test(name);
+}
+
 // 댓글 항목 안에서 본문 요소를 고른다. 중첩된 다른 항목(답글)에 속한 요소는 건너뛴다.
 function findTextEl(item, itemSet) {
   let best = null;
@@ -54,6 +67,7 @@ function findTextEl(item, itemSet) {
     acceptNode(el) {
       if (el !== item && itemSet.has(el)) return NodeFilter.FILTER_REJECT;
       if (el.matches(NOT_TEXT_ANCESTOR)) return NodeFilter.FILTER_REJECT;
+      if (el !== item && isNotText(el)) return NodeFilter.FILTER_REJECT;
       return NodeFilter.FILTER_ACCEPT;
     },
   });
@@ -113,6 +127,15 @@ function findItemsAuto() {
  * @returns {{item: Element, textEl: Element}[]}
  */
 export function findComments(customSelector) {
+  const rule = customSelector ? null : SITE_RULES[location.hostname];
+  if (rule) {
+    const out = [];
+    for (const item of document.querySelectorAll(rule.item)) {
+      const textEl = item.querySelector(rule.text);
+      if (textEl && !textEl.closest(OURS)) out.push({ item, textEl });
+    }
+    return out;
+  }
   let items = [];
   if (customSelector) {
     try {

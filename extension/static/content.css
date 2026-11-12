@@ -24,6 +24,22 @@
   background: rgba(var(--eml-rgb, 128, 128, 128), 0.12);
 }
 .eml-row { display: flex; align-items: center; gap: 0.6em; min-width: 0; }
+
+/* 원문 요소를 그대로 둔 채 같은 모양으로 꾸미는 경우 */
+[data-eml-inplace] {
+  --eml-size: clamp(30px, 2.3em, 44px);
+  box-sizing: border-box !important;
+  min-height: calc(var(--eml-size) + 12px);
+  padding: 6px 12px 6px calc(8px + var(--eml-size) + 0.6em) !important;
+  border-radius: 14px !important;
+  background-color: rgba(var(--eml-rgb, 128, 128, 128), 0.12) !important;
+  background-image: var(--eml-emoji) !important;
+  background-repeat: no-repeat !important;
+  background-position: 8px center !important;
+  background-size: var(--eml-size) var(--eml-size) !important;
+  overflow-wrap: anywhere;
+}
+[data-eml-inplace][data-eml-block] { display: block !important; }
 .eml-body { flex: 1 1 0; min-width: 0; }
 .eml-emoji {
   flex: none;
@@ -51,7 +67,9 @@
   max-width: 100%;
 }
 .eml-view button:focus-visible { outline: 2px solid #2456c8; outline-offset: 2px; }
-.eml-view .eml-btn { font-size: 0.85em; color: #2456c8; padding: 2px 0; }
+/* 밝은 배경과 어두운 배경 모두에서 읽히도록 글자색을 따라간다. */
+.eml-view .eml-btn { font-size: 0.85em; color: inherit; opacity: 0.6; text-decoration: underline; text-underline-offset: 2px; padding: 2px 0; }
+.eml-view .eml-btn:hover { opacity: 1; }
 .eml-view .eml-fold { display: flex; gap: 0.6em; align-items: center; min-width: 0; width: fit-content; }
 .eml-view .eml-fold[hidden] { display: none !important; }
 .eml-fold-label { min-width: 0; opacity: 0.7; }
@@ -107,3 +125,5 @@
   font: 14px/1.4 system-ui, sans-serif;
   pointer-events: none;
 }
+
+.eml-text a { color: inherit; text-decoration: underline; }
