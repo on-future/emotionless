@@ -90,6 +90,8 @@ export function startPicker(onPicked) {
   const onClick = (event) => {
     event.preventDefault();
     event.stopPropagation();
+    // 댓글 위치 저장은 사람이 실제로 누른 경우에만 한다.
+    if (!event.isTrusted) return;
     const count = marked.length;
     const picked = count > 1 ? selector : null;
     if (!picked) return;

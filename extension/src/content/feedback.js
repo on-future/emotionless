@@ -32,10 +32,10 @@ function show(node, x, y, onDismiss = null) {
   pop.style.top = `${Math.round(top)}px`;
 
   const onDown = (event) => {
-    if (!pop?.contains(event.target)) closePopover();
+    if (event.isTrusted && !pop?.contains(event.target)) closePopover();
   };
   const onKey = (event) => {
-    if (event.key === "Escape") closePopover();
+    if (event.isTrusted && event.key === "Escape") closePopover();
   };
   // 방금 이 말풍선을 띄운 클릭에 바로 닫히지 않도록 다음 틱부터 듣는다.
   const timer = setTimeout(() => {
@@ -80,6 +80,7 @@ export function openEmotionPicker({ x, y, current, onPick }) {
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
+      if (!event.isTrusted) return; // 페이지 스크립트가 대신 누른 것은 무시한다
       closePopover();
       if (group !== current) onPick(group);
     });
@@ -98,6 +99,7 @@ export function openWordMenu({ x, y, actions, onPick }) {
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
+      if (!event.isTrusted) return; // 페이지 스크립트가 대신 누른 것은 무시한다
       closePopover();
       onPick(action.id);
     });
@@ -134,6 +136,7 @@ export function openShareNotice({ x, y, onClose }) {
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
+      if (!event.isTrusted) return; // 페이지 스크립트가 대신 누른 것은 무시한다
       answer(value);
       closePopover();
     });

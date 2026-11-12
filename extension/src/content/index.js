@@ -530,8 +530,11 @@ function faceTarget(event) {
   return null;
 }
 
+// 판정을 고치거나 설정을 바꾸는 동작은 사람이 실제로 누른 경우에만 받는다.
+// 웹페이지의 스크립트는 우리가 넣은 버튼을 대신 누를 수 있으므로, 이를 막지 않으면
+// 악성 사이트가 방문자의 브라우저로 조작된 피드백을 보내게 할 수 있다.
 function onFaceClick(event) {
-  if (!running) return;
+  if (!running || !event.isTrusted) return;
   const textEl = faceTarget(event);
   if (!textEl) return;
   event.preventDefault();
@@ -541,8 +544,8 @@ function onFaceClick(event) {
 }
 
 // 댓글 안의 글을 드래그해 고르면, 그 표현을 지울지 남길지 고르는 작은 메뉴를 띄운다.
-function onSelection() {
-  if (!running) return;
+function onSelection(event) {
+  if (!running || !event?.isTrusted) return;
   const selection = getSelection();
   const phrase = selection?.toString().replace(/\s+/g, " ").trim() ?? "";
   if (!selection || selection.isCollapsed || phrase.length < 1 || phrase.length > 40) return;
@@ -707,7 +710,7 @@ async function main() {
 
   chrome.storage.onChanged.addListener(onSettingsChanged);
   document.addEventListener("click", onFaceClick, true);
-  document.addEventListener("mouseup", () => setTimeout(onSelection), true);
+  document.addEventListener("mouseup", (event) => setTimeout(() => onSelection(event)), true);
   chrome.runtime.onMessage.addListener(onMessage);
   window.addEventListener("message", growChildFrame);
   if (isTop) {
