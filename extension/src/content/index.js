@@ -9,7 +9,7 @@ import {
   renderStaleNotice,
   measure,
   syncTypography,
-  fixClipping,
+  fixInPlace,
 } from "./render.js";
 import { startPicker, stopPicker } from "./picker.js";
 import { GROUPS } from "../shared/emotion.js";
@@ -303,7 +303,7 @@ async function pump() {
           inPlace.push({
             textEl,
             item: entry.item,
-            wasClipped: metrics[index].clipped,
+            before: metrics[index],
             fallback: () => {
               removeView(textEl, null);
               entry.view = renderComment(textEl, data, display, metrics[index], { forceView: true });
@@ -311,7 +311,7 @@ async function pump() {
           });
         }
       });
-      fixClipping(inPlace);
+      fixInPlace(inPlace);
       publishCounts();
       reportFrameHeight();
     }

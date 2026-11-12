@@ -8,7 +8,7 @@ const LEVEL_SAMPLE = "아니 진짜 이걸 업데이트라고 내놓은 거냐�
 const LEVEL_INFO = {
   label: { sub: "감정만 표시하고 글은 그대로 둬요.", preview: LEVEL_SAMPLE },
   clean: { sub: "욕설과 과한 표현을 지워요.", preview: strip(LEVEL_SAMPLE) },
-  fold: { sub: "표현을 지우고, 분노·비난 댓글은 한 줄로 접어요.", preview: "분노 댓글을 접었습니다 · 눌러서 보기" },
+  fold: { sub: "표현을 지우고, 분노·비난 댓글은 접어 둬요. 누르면 펼쳐져요.", preview: "•••" },
   hide: { sub: "표현을 지우고, 분노·비난 댓글은 아예 숨겨요.", preview: "화난 댓글은 보이지 않아요" },
 };
 const POLL_MS = 1000;

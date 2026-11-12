@@ -22,45 +22,28 @@
 [data-eml-group="surprise"] { --eml-rgb: 234, 179, 8; }
 [data-eml-group="neutral"] { --eml-rgb: 128, 128, 128; }
 .eml-view [hidden] { display: none !important; }
-.eml-row, .eml-view .eml-fold {
-  box-sizing: border-box;
-  max-width: 100%;
-  padding: 6px 12px 6px 8px;
-  border-radius: 14px;
-  background: rgba(var(--eml-rgb, 128, 128, 128), 0.12);
-}
-.eml-row { display: flex; align-items: center; gap: 0.6em; min-width: 0; }
 
-/* 원문 요소를 그대로 둔 채 같은 모양으로 꾸미는 경우 */
-[data-eml-inplace] {
-  --eml-size: clamp(30px, 2.3em, 44px);
-  box-sizing: border-box !important;
-  min-height: calc(var(--eml-size) + 12px);
-  padding: 6px 12px 6px calc(8px + var(--eml-size) + 0.6em) !important;
-  border-radius: 14px !important;
-  background-color: rgba(var(--eml-rgb, 128, 128, 128), 0.12) !important;
-  background-image: var(--eml-emoji) !important;
-  background-repeat: no-repeat !important;
-  background-position: 8px center !important;
-  background-size: var(--eml-size) var(--eml-size) !important;
-  overflow-wrap: anywhere;
+/* ── 댓글 말풍선 ──────────────────────────────────────────────────────────
+   메시지 앱처럼 감정 얼굴은 말풍선 밖 왼쪽에 두고, 말풍선에는 글만 담는다.
+   말풍선은 글 길이에 맞춰 줄어들고, 얼굴은 첫 줄 높이에 맞춰 놓는다.
+   크기와 여백은 사이트 글자 크기(em, lh)를 따라간다. 조작에 쓰는 글자는 두지 않는다. */
+.eml-view, [data-eml-inplace] {
+  --eml-size: clamp(24px, 1.55lh, 34px);
+  --eml-pad-y: 0.42em;
+  --eml-pad-x: 0.85em;
+  --eml-gap: 0.5em;
+  --eml-radius: 1.15em;
+  --eml-tint: rgba(var(--eml-rgb, 128, 128, 128), 0.12);
+  --eml-tint-strong: rgba(var(--eml-rgb, 128, 128, 128), 0.22);
 }
-[data-eml-inplace][data-eml-block] { display: block !important; }
-/* 줄 수나 높이가 제한된 자리에서는 위아래 여백을 두지 않는다. */
-[data-eml-inplace][data-eml-tight] {
-  min-height: 0;
-  padding-top: 0 !important;
-  padding-bottom: 0 !important;
-  background-size: contain !important;
-  background-size: min(var(--eml-size), 100%) !important;
-}
-.eml-body { flex: 1 1 0; min-width: 0; }
+.eml-msg { display: flex; align-items: flex-start; gap: var(--eml-gap); width: fit-content; min-width: 0; max-width: 100%; }
 .eml-emoji {
   flex: none;
   display: block;
-  width: clamp(30px, 2.3em, 44px);
-  height: clamp(30px, 2.3em, 44px);
-  margin: 0;
+  width: var(--eml-size);
+  height: var(--eml-size);
+  /* 얼굴의 가운데를 말풍선 첫 줄의 가운데에 맞춘다. */
+  margin: calc(var(--eml-pad-y) + (1lh - var(--eml-size)) / 2) 0 0;
   padding: 0;
   border: 0;
   object-fit: contain;
@@ -68,25 +51,85 @@
   user-select: none;
   transition: transform 0.15s ease;
 }
-.eml-view:hover .eml-emoji { transform: scale(1.12) rotate(-4deg); }
-.eml-text { display: block; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
-.eml-text.eml-empty { opacity: 0.6; }
-.eml-actions { display: flex; flex-wrap: wrap; gap: 0.75em; margin-top: 2px; }
-
-.eml-view button {
-  all: unset;
+.eml-msg:hover .eml-emoji { transform: scale(1.1) rotate(-4deg); }
+.eml-bubble {
   box-sizing: border-box;
-  cursor: pointer;
-  font: inherit;
-  max-width: 100%;
+  min-width: 0;
+  padding: var(--eml-pad-y) var(--eml-pad-x);
+  /* 얼굴 쪽 모서리만 덜 둥글게 해, 말풍선이 얼굴에서 나온 것처럼 보이게 한다. */
+  border-radius: 0.35em var(--eml-radius) var(--eml-radius) var(--eml-radius);
+  background: var(--eml-tint);
+  transition: background 0.12s ease, box-shadow 0.12s ease;
 }
-.eml-view button:focus-visible { outline: 2px solid #2456c8; outline-offset: 2px; }
-/* 밝은 배경과 어두운 배경 모두에서 읽히도록 글자색을 따라간다. */
-.eml-view .eml-btn { font-size: 0.85em; color: inherit; opacity: 0.6; text-decoration: underline; text-underline-offset: 2px; padding: 2px 0; }
-.eml-view .eml-btn:hover { opacity: 1; }
-.eml-view .eml-fold { display: flex; gap: 0.6em; align-items: center; min-width: 0; width: fit-content; }
-.eml-view .eml-fold[hidden] { display: none !important; }
-.eml-fold-label { min-width: 0; opacity: 0.7; }
+.eml-text { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+.eml-text:not([hidden]) { animation: eml-in 0.16s ease; }
+.eml-text.eml-empty { opacity: 0.5; }
+@keyframes eml-in { from { opacity: 0; } }
+
+/* 누르면 접히고 펼쳐지는 말풍선. 접힌 상태는 점 세 개로 보인다. */
+.eml-foldable { cursor: pointer; }
+.eml-foldable:hover { background: var(--eml-tint-strong); }
+.eml-foldable:focus-visible { outline: 2px solid #2b5fd9; outline-offset: 2px; }
+.eml-dots { display: inline-flex; align-items: center; gap: 0.3em; height: 1lh; vertical-align: top; }
+.eml-dots[hidden] { display: none !important; }
+.eml-dots i { display: block; width: max(0.38em, 5px); height: max(0.38em, 5px); border-radius: 50%; background: currentColor; opacity: 0.5; transition: opacity 0.12s ease; }
+.eml-foldable:hover .eml-dots i { opacity: 0.85; }
+
+/* 원문 보기: 말풍선에 마우스를 올렸을 때만 보이는 작은 아이콘. 원문을 보는 동안에는 계속 보이고 말풍선에 테두리가 생긴다. */
+.eml-view button { all: unset; box-sizing: border-box; cursor: pointer; font: inherit; }
+.eml-icon { display: block; width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.eml-view .eml-eye {
+  display: inline-flex;
+  margin-left: 0.5em;
+  padding: 0.12em;
+  border-radius: 50%;
+  vertical-align: -0.2em;
+  opacity: 0;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+.eml-view .eml-eye[hidden] { display: none !important; }
+.eml-bubble:hover .eml-eye, .eml-view .eml-eye:focus-visible { opacity: 0.5; }
+.eml-view .eml-eye:hover, .eml-view .eml-eye[aria-pressed="true"] { opacity: 1; background: var(--eml-tint-strong); }
+.eml-view .eml-eye:focus-visible { outline: 2px solid #2b5fd9; outline-offset: 1px; }
+.eml-bubble.eml-original { box-shadow: inset 0 0 0 1.5px rgba(var(--eml-rgb, 128, 128, 128), 0.5); }
+
+/* 원문 요소를 그대로 둔 채 같은 모양으로 꾸미는 경우. 얼굴은 배경 그림으로, 말풍선은 ::before 로 그린다. */
+[data-eml-inplace] {
+  box-sizing: border-box !important;
+  isolation: isolate;
+  width: fit-content !important;
+  max-width: 100% !important;
+  padding: var(--eml-pad-y) var(--eml-pad-x) var(--eml-pad-y) calc(var(--eml-size) + var(--eml-gap) + var(--eml-pad-x)) !important;
+  background: var(--eml-emoji) no-repeat 0 calc(var(--eml-pad-y) + (1lh - var(--eml-size)) / 2) / var(--eml-size) var(--eml-size) !important;
+  overflow-wrap: anywhere;
+}
+[data-eml-inplace][data-eml-rel] { position: relative !important; }
+[data-eml-inplace]::before {
+  content: "" !important;
+  position: absolute !important;
+  z-index: -1 !important;
+  inset: 0 0 0 calc(var(--eml-size) + var(--eml-gap)) !important;
+  display: block !important;
+  width: auto !important;
+  height: auto !important;
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 0.35em var(--eml-radius) var(--eml-radius) var(--eml-radius) !important;
+  background: var(--eml-tint) !important;
+  pointer-events: none;
+}
+[data-eml-inplace][data-eml-block] { display: block !important; }
+/* 줄 수나 높이가 제한된 자리에서는 위아래 여백을 두지 않는다. */
+[data-eml-inplace][data-eml-tight] {
+  --eml-size: min(1lh, 24px);
+  --eml-pad-y: 0em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eml-emoji, .eml-bubble, .eml-dots i, .eml-view .eml-eye { transition: none; }
+  .eml-text:not([hidden]) { animation: none; }
+  .eml-msg:hover .eml-emoji { transform: none; }
+}
 
 /* 화면 구석에 떠 있는 반응 요약. 페이지 흐름 밖이라 위치가 변하지 않는다. */
 .eml-pill {

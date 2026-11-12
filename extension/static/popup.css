@@ -142,7 +142,7 @@ div.row { cursor: default; }
   line-height: 1.4;
 }
 .preview img { flex: none; width: 26px; height: 26px; }
-.preview[data-level="fold"] span { color: var(--muted); }
+.preview[data-level="fold"] span { color: var(--muted); letter-spacing: 0.25em; font-size: 15px; }
 .preview[data-level="hide"] { background: none; border: 1px dashed var(--line); color: var(--muted); justify-content: center; }
 .preview[data-level="hide"] img { display: none; }
 .btn {

@@ -28,6 +28,13 @@ function isClipped(textEl, item) {
   return false;
 }
 
+// 댓글 항목 안에서 본문이 놓인 자리. 다른 댓글의 높이가 바뀌어도 달라지지 않는 값이다.
+function offsetInItem(textEl, item) {
+  const a = textEl.getBoundingClientRect();
+  const b = item.getBoundingClientRect();
+  return { top: a.top - b.top, left: a.left - b.left };
+}
+
 /**
  * 화면을 바꾸기 전에 원문 요소에서 필요한 값을 읽어 둔다.
  * 여러 댓글의 읽기를 먼저 끝내고 쓰기를 몰아서 하면 브라우저가 스타일을 반복 계산하지 않는다.
@@ -37,7 +44,9 @@ export function measure(textEl, item) {
   return {
     typography: Object.fromEntries(TYPOGRAPHY.map((prop) => [prop, computed[prop]])),
     inline: computed.display === "inline",
+    position: computed.position,
     clipped: isClipped(textEl, item),
+    offset: offsetInItem(textEl, item),
   };
 }
 
@@ -82,6 +91,22 @@ function setLinkedText(node, value, originalLinks) {
   );
 }
 
+// 선으로 그린 작은 아이콘. 글자색을 따라간다.
+const ICONS = {
+  original: "M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z M12 9.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5z",
+};
+
+function iconEl(name) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("class", "eml-icon");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", ICONS[name]);
+  svg.append(path);
+  return svg;
+}
+
 const el = (tag, className, text) => {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -92,16 +117,17 @@ const el = (tag, className, text) => {
 /**
  * @param {Element} textEl 원문 요소
  * @param {{group: string, original: string, cleaned: string, changed: boolean}} data
- * @param {{fold: boolean}} settings fold: 분노·비난 댓글을 한 줄로 접을지
+ * @param {{fold: boolean}} settings fold: 분노·비난 댓글을 접어 둘지
  * @param {ReturnType<typeof measure>} metrics 화면을 바꾸기 전에 읽어 둔 값
  * @param {{forceView?: boolean}} [options] forceView: 원문 요소를 꾸미지 않고 항상 순화본으로 대체
  * @returns {Element|null} 순화본 요소. 원문 요소를 그대로 꾸민 경우 null
  */
 export function renderComment(textEl, data, settings, metrics, options = {}) {
   const info = GROUPS[data.group];
+  const foldable = settings.fold && info.fold;
   // 지울 것이 없고 접지도 않는 댓글은 원문 요소를 그대로 두고 꾸미기만 한다.
   // 링크, 타임스탬프, "자세히 보기" 같은 사이트 기능이 그대로 살아 있다.
-  if (!options.forceView && !data.changed && !(settings.fold && info.fold)) {
+  if (!options.forceView && !data.changed && !foldable) {
     decorateInPlace(textEl, data.group, metrics);
     return null;
   }
@@ -111,47 +137,74 @@ export function renderComment(textEl, data, settings, metrics, options = {}) {
     .map((a) => ({ text: a.textContent.trim(), href: a.href }))
     .filter((l) => l.text && /^https?:/.test(l.href));
 
-  const state = { folded: settings.fold && info.fold, showOriginal: false };
+  const state = { folded: foldable, showOriginal: false };
 
-  const foldBtn = el("button", "eml-fold");
-  foldBtn.type = "button";
-  foldBtn.append(emojiEl(data.group), el("span", "eml-fold-label", `${info.label} 댓글을 접었습니다 · 눌러서 보기`));
-
-  const row = el("div", "eml-row");
-  const body = el("div", "eml-body");
+  // 얼굴 + 말풍선. 조작에 쓰는 글자는 두지 않고, 설명은 툴팁과 접근성 이름으로만 준다.
+  const msg = el("div", "eml-msg");
+  const bubble = el("div", "eml-bubble");
+  const dots = el("span", "eml-dots");
+  dots.setAttribute("aria-hidden", "true");
+  dots.append(el("i"), el("i"), el("i"));
   const text = el("span", "eml-text");
-  const actions = el("div", "eml-actions");
-  body.append(text, actions);
-  row.append(emojiEl(data.group), body);
+  const eye = el("button", "eml-eye");
+  eye.type = "button";
+  eye.append(iconEl("original"));
+  bubble.append(dots, text);
+  if (data.changed) bubble.append(eye);
+  msg.append(emojiEl(data.group), bubble);
 
-  const origBtn = el("button", "eml-btn");
-  origBtn.type = "button";
-  const refoldBtn = el("button", "eml-btn", "다시 접기");
-  refoldBtn.type = "button";
-  if (data.changed) actions.append(origBtn);
-  if (settings.fold && info.fold) actions.append(refoldBtn);
+  if (foldable) {
+    bubble.classList.add("eml-foldable");
+    bubble.tabIndex = 0;
+    bubble.setAttribute("role", "button");
+  }
 
   const update = () => {
-    foldBtn.hidden = !state.folded;
-    row.hidden = state.folded;
-    actions.hidden = state.folded || !actions.childElementCount;
+    dots.hidden = !state.folded;
+    text.hidden = state.folded;
+    eye.hidden = state.folded;
     const shown = state.showOriginal ? data.original : data.cleaned;
-    setLinkedText(text, shown || "(감정 표현만 있는 댓글)", originalLinks);
+    // 감정 표현만 있던 댓글은 지우고 나면 남는 글이 없다.
+    setLinkedText(text, shown || "…", originalLinks);
     text.classList.toggle("eml-empty", !shown);
-    origBtn.textContent = state.showOriginal ? "순화본 보기" : "원문 보기";
+    text.title = shown ? "" : "감정 표현만 있는 댓글";
+    bubble.classList.toggle("eml-original", state.showOriginal);
+    const eyeLabel = state.showOriginal ? "순화본 보기" : "원문 보기";
+    eye.title = eyeLabel;
+    eye.setAttribute("aria-label", eyeLabel);
+    eye.setAttribute("aria-pressed", String(state.showOriginal));
+    if (foldable) {
+      const label = state.folded ? `${info.label} 댓글, 눌러서 펼치기` : "눌러서 접기";
+      bubble.title = state.folded ? label : "";
+      bubble.setAttribute("aria-label", label);
+      bubble.setAttribute("aria-expanded", String(!state.folded));
+    }
   };
 
-  const stop = (handler) => (event) => {
+  const toggleFold = (event) => {
+    if (event.target instanceof Element && event.target.closest("a, .eml-eye")) return;
+    // 글을 드래그해 고르는 중에는 접지 않는다.
+    if (!state.folded && String(getSelection() ?? "")) return;
     event.preventDefault();
     event.stopPropagation();
-    handler();
+    state.folded = !state.folded;
+    if (state.folded) state.showOriginal = false;
     update();
   };
-  foldBtn.addEventListener("click", stop(() => (state.folded = false)));
-  refoldBtn.addEventListener("click", stop(() => (state.folded = true)));
-  origBtn.addEventListener("click", stop(() => (state.showOriginal = !state.showOriginal)));
+  if (foldable) {
+    bubble.addEventListener("click", toggleFold);
+    bubble.addEventListener("keydown", (event) => {
+      if (event.target === bubble && (event.key === "Enter" || event.key === " ")) toggleFold(event);
+    });
+  }
+  eye.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    state.showOriginal = !state.showOriginal;
+    update();
+  });
 
-  view.append(foldBtn, row);
+  view.append(msg);
   update();
 
   textEl.setAttribute("data-eml-hidden", "");
@@ -161,6 +214,8 @@ export function renderComment(textEl, data, settings, metrics, options = {}) {
 
 function decorateInPlace(textEl, group, metrics) {
   if (metrics.inline) textEl.setAttribute("data-eml-block", "");
+  // 말풍선을 그리는 ::before 가 이 요소를 기준으로 놓이도록 한다.
+  if (metrics.position === "static") textEl.setAttribute("data-eml-rel", "");
   textEl.setAttribute("data-eml-inplace", "");
   textEl.setAttribute("data-eml-group", group);
   try {
@@ -181,7 +236,7 @@ export function hideComment(textEl, item, hasReplies) {
 export function removeView(textEl, view) {
   view?.remove();
   if (textEl.hasAttribute("data-eml-inplace")) {
-    for (const attr of ["data-eml-inplace", "data-eml-group", "data-eml-block", "data-eml-tight"]) {
+    for (const attr of ["data-eml-inplace", "data-eml-group", "data-eml-block", "data-eml-tight", "data-eml-rel"]) {
       textEl.removeAttribute(attr);
     }
     textEl.style.removeProperty("--eml-emoji");
@@ -191,16 +246,24 @@ export function removeView(textEl, view) {
 }
 
 /**
- * 원문 요소를 꾸미면서 생긴 여백 때문에 글이 잘리게 된 댓글을 바로잡는다.
- * 먼저 위아래 여백을 없애 보고, 그래도 잘리면 fallback 을 불러 순화본 방식으로 바꾼다.
- * @param {{textEl: Element, item: Element, wasClipped: boolean, fallback: () => void}[]} list
+ * 원문 요소를 그대로 꾸민 뒤 사이트 배치가 어긋난 댓글을 바로잡는다.
+ * - 말풍선이 글 길이에 맞춰 줄어들면서 자리가 옮겨진 경우(작성자 줄 옆으로 올라붙는 등): 순화본 방식으로 바꾼다.
+ * - 여백 때문에 글이 잘리게 된 경우: 위아래 여백을 없애 보고, 그래도 잘리면 순화본 방식으로 바꾼다.
+ * 순화본은 우리가 만든 요소라 사이트 배치를 건드리지 않는다.
+ * @param {{textEl: Element, item: Element, before: ReturnType<typeof measure>, fallback: () => void}[]} list
  */
-export function fixClipping(list) {
-  const newlyClipped = (entries) =>
-    entries.map((e) => !e.wasClipped && isClipped(e.textEl, e.item)).flatMap((bad, i) => (bad ? [entries[i]] : []));
-  const tight = newlyClipped(list);
+export function fixInPlace(list) {
+  const moved = new Set(
+    list.filter(({ textEl, item, before }) => {
+      const now = offsetInItem(textEl, item);
+      return Math.abs(now.top - before.offset.top) > 2 || Math.abs(now.left - before.offset.left) > 2;
+    }),
+  );
+  const newlyClipped = (entries) => entries.filter((e) => !e.before.clipped && isClipped(e.textEl, e.item));
+  const tight = newlyClipped(list.filter((e) => !moved.has(e)));
   for (const { textEl } of tight) textEl.setAttribute("data-eml-tight", "");
-  for (const { fallback } of newlyClipped(tight)) fallback();
+  const stillClipped = newlyClipped(tight);
+  for (const { fallback } of [...moved, ...stillClipped]) fallback();
 }
 
 let staleNotice = null;
