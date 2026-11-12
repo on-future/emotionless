@@ -149,6 +149,13 @@ function findItemsAuto() {
  * @param {string|null} customSelector 사용자가 직접 지정한 댓글 항목 선택자
  * @returns {{item: Element, textEl: Element}[]}
  */
+/** 이 사이트에 정해 둔 댓글 본문 위치 (페이지를 읽기 시작하자마자 흐리게 할 때 쓴다). */
+export function siteTextSelectors() {
+  const rule = SITE_RULES[location.hostname];
+  if (!rule || rule.skipPath?.test(location.pathname)) return [];
+  return rule.item.split(",").map((item) => `${item.trim()} ${rule.text}`);
+}
+
 export function findComments(customSelector) {
   let items = [];
   if (customSelector) {

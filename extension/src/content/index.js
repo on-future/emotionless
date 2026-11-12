@@ -1,6 +1,7 @@
 // 콘텐츠 스크립트: 댓글을 찾아 두고, 화면에 보이는(곧 보일) 댓글만 분류해 표시한다.
 // 설정이 바뀌면 새로 고침 없이 바로 반영한다.
-import { findComments } from "./detect.js";
+import { findComments, siteTextSelectors } from "./detect.js";
+import { installPrehide, removePrehide, settleOthers, learnSelectors } from "./prehide.js";
 import {
   renderComment,
   removeView,
@@ -88,6 +89,11 @@ let visibility = null;
 let domObserver = null;
 let themeObserver = null;
 let observedBody = null;
+// 페이지를 읽기 시작하자마자 흐리게 걸어 둔 댓글 위치
+let prehideSelectors = [];
+// 지난번 댓글 찾기에 걸린 시간. 페이지가 무거우면 찾는 간격을 늘린다.
+let lastScanMs = 0;
+let learnTimer = null;
 let countTimer = null;
 
 const isActive = () => settings.enabled && !settings.disabledHosts.includes(siteHost);
@@ -373,6 +379,7 @@ function onVisible(entries) {
 function track(item, textEl) {
   const original = readText(textEl);
   if (!original || !HANGUL.test(original)) return false;
+  textEl.removeAttribute("data-eml-done");
   tracked.set(textEl, { item, original, raw: rawText(textEl), group: null, view: null, state: "waiting" });
   // 처리 전 원문이 읽히지 않도록 흐리게 해 둔다.
   textEl.setAttribute("data-eml-pending", "");
@@ -404,18 +411,44 @@ function scan() {
     const stale = !textEl.isConnected || rawText(textEl) !== entry.raw || (entry.view && !entry.view.isConnected);
     if (stale) forget(textEl, entry);
   }
-  for (const { item, textEl } of findComments(settings.selectors[host] ?? null)) {
+  const started = performance.now();
+  const found = findComments(settings.selectors[host] ?? null);
+  for (const { item, textEl } of found) {
     // 숨겨진 화면에 남아 있는 댓글은 다시 보일 때 처리한다.
     if (tracked.has(textEl) || !isRendered(textEl)) continue;
     track(item, textEl);
   }
+  // 미리 흐리게 걸어 둔 위치 가운데 댓글이 아니었던 요소는 바로 흐림을 푼다.
+  settleOthers(prehideSelectors, (el) => tracked.has(el));
+  lastScanMs = performance.now() - started;
   // 댓글이 사라졌거나 다른 화면으로 넘어갔으면 숫자도 따라 바뀐다.
   publishCounts();
+  if (tracked.size >= 2) scheduleLearn();
+}
+
+// 이 사이트의 댓글 본문 위치를 기억해 두어, 다음 방문부터 처음 그릴 때 바로 흐리게 한다.
+function scheduleLearn() {
+  clearTimeout(learnTimer);
+  learnTimer = setTimeout(async () => {
+    const pairs = [...tracked].map(([textEl, entry]) => ({ item: entry.item, textEl }));
+    const selectors = learnSelectors(pairs);
+    if (!selectors.length) return;
+    try {
+      const { learned = {} } = await chrome.storage.local.get("learned");
+      if (JSON.stringify(learned[host]) === JSON.stringify(selectors)) return;
+      const hosts = Object.keys(learned).filter((h) => h !== host).slice(-199);
+      const next = Object.fromEntries(hosts.map((h) => [h, learned[h]]));
+      next[host] = selectors;
+      await chrome.storage.local.set({ learned: next });
+      prehideSelectors = installPrehide([...siteTextSelectors(), ...selectors]);
+    } catch {}
+  }, 1500);
 }
 
 function scheduleScan() {
   clearTimeout(scanTimer);
-  scanTimer = setTimeout(scan, 300);
+  // 가벼운 페이지는 곧바로, 무거운 페이지는 찾는 데 걸린 시간의 몇 배만큼 기다렸다가 다시 찾는다.
+  scanTimer = setTimeout(scan, Math.min(300, Math.max(16, lastScanMs * 4)));
 }
 
 // 사이트 테마가 바뀌면 순화본에 옮겨 둔 글자색을 다시 맞춘다.
@@ -534,9 +567,35 @@ function onSelection() {
 }
 
 // ── 켜기 / 끄기 ──────────────────────────────────────────────────────────
-function start() {
+// 문서를 읽기 시작하는 시점에는 body 가 아직 없을 수 있다.
+function whenBody() {
+  if (document.body) return Promise.resolve();
+  return new Promise((resolve) => {
+    const observer = new MutationObserver(() => {
+      if (!document.body) return;
+      observer.disconnect();
+      resolve();
+    });
+    observer.observe(document.documentElement, { childList: true });
+  });
+}
+
+// 처음 그릴 때부터 흐리게 하고, 모델을 미리 깨워 둔다. 둘 다 body 가 생기기 전에 할 수 있다.
+async function prepare() {
+  try {
+    const { learned = {} } = await chrome.storage.local.get("learned");
+    prehideSelectors = installPrehide([...siteTextSelectors(), ...(learned[host] ?? [])]);
+  } catch {}
+  try {
+    chrome.runtime.sendMessage({ type: "warm" });
+  } catch {}
+}
+
+async function start() {
   if (running) return;
   running = true;
+  await whenBody();
+  if (!running) return;
   visibility = new IntersectionObserver(onVisible, { rootMargin: PRELOAD_MARGIN });
   domObserver = new MutationObserver((mutations) => {
     // 우리가 넣은 요소로 인한 변화는 무시한다.
@@ -570,6 +629,9 @@ function stop() {
   countTimer = null;
   domObserver.disconnect();
   themeObserver.disconnect();
+  clearTimeout(learnTimer);
+  removePrehide();
+  for (const el of document.querySelectorAll("[data-eml-done]")) el.removeAttribute("data-eml-done");
   forgetAll();
   visibility.disconnect();
   stopPicker();
@@ -601,8 +663,10 @@ function onSettingsChanged(changes, area) {
   settings = normalize(next);
 
   if (isActive() !== wasActive) {
-    if (isActive()) start();
-    else stop();
+    if (isActive()) {
+      prepare();
+      start();
+    } else stop();
     return;
   }
   if (!running) return;
@@ -632,6 +696,7 @@ async function main() {
   const stored = await chrome.storage.local.get([...STORAGE_KEYS, ...DATA_KEYS]);
   settings = normalize(stored);
   data = normalizeData(stored);
+  if (isActive()) prepare();
   rebuildLearned();
   // 공유 묶음을 가끔 새로 받아 온다 (맨 위 페이지에서 한 번만 부탁한다).
   if (isTop && __API_BASE__) {

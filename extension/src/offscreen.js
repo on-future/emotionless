@@ -46,6 +46,15 @@ function deleteSpans(offsets, logits) {
 // 요청이 겹치지 않도록 한 줄로 세운다.
 let queue = Promise.resolve();
 
+// 같은 글은 다시 계산하지 않는다. 이 문서는 탭이 바뀌어도 살아 있으므로 다른 페이지·다시 방문에도 쓰인다.
+const CACHE_LIMIT = 5000;
+const cache = new Map();
+function remember(text, result) {
+  cache.delete(text);
+  cache.set(text, result);
+  if (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value);
+}
+
 async function run(texts) {
   ready ??= load();
   const { tokenizer, session } = await ready;
@@ -53,6 +62,11 @@ async function run(texts) {
   // 한 문장씩 돌린다. 묶으면 가장 긴 문장 길이에 맞춰 채우느라 짧은 댓글이 많을 때 오히려 느리다.
   const results = [];
   for (const text of texts) {
+    const known = cache.get(text);
+    if (known) {
+      results.push(known);
+      continue;
+    }
     const { ids, offsets } = tokenizer.encode(text, MAX_TOKENS);
     const shape = [1, ids.length];
     const output = await session.run({
@@ -62,12 +76,19 @@ async function run(texts) {
     });
     const emotion = output.emotion.data;
     const scores = Object.fromEntries(LABELS.map((label, i) => [label, sigmoid(emotion[i])]));
-    results.push({ group: classify(scores), v: toVector(scores), del: deleteSpans(offsets, output.tags.data) });
+    const result = { group: classify(scores), v: toVector(scores), del: deleteSpans(offsets, output.tags.data) };
+    remember(text, result);
+    results.push(result);
   }
   return { results, ms: Math.round(performance.now() - started), threads: ort.env.wasm.numThreads };
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.target === "offscreen" && msg.type === "warm") {
+    ready ??= load();
+    ready.catch(() => (ready = null));
+    return false;
+  }
   if (msg?.target !== "offscreen" || msg.type !== "classify") return false;
   queue = queue
     .then(() => run(msg.texts))

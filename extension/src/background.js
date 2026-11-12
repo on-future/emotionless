@@ -20,6 +20,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     chrome.tabs.sendMessage(sender.tab.id, { type: "pick-stop", cancelled: msg.cancelled === true }).catch(() => {});
     return false;
   }
+  // 페이지가 열리자마자 모델을 미리 불러 둔다. 첫 댓글을 기다리지 않게 하려는 것이다.
+  if (msg?.type === "warm") {
+    ensureOffscreen()
+      .then(() => chrome.runtime.sendMessage({ target: "offscreen", type: "warm" }))
+      .catch(() => {});
+    return false;
+  }
   if (msg?.type !== "classify" || msg.target === "offscreen") return false;
   (async () => {
     try {

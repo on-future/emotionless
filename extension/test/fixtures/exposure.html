@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>emotionless 노출 시간 측정</title>
+    <style>
+      body { font: 15px/1.6 system-ui, sans-serif; max-width: 640px; margin: 24px auto; padding: 0 16px; }
+      .comment-list { list-style: none; padding: 0; }
+      .comment-item { border-bottom: 1px solid #ddd; padding: 10px 0; }
+    </style>
+    <script>
+      // 댓글 본문이 처리되기 전에 맨눈에 보인 시간을 잰다. 화면 그리기마다 확인한다.
+      window.__exposure = {};
+      const TEXTS = [
+        "아니 진짜 이걸 지금 업데이트라고 내놓은 거냐? 개발자들 제정신임?? 렉 때문에 게임을 할 수가 없는데 ㅋㅋㅋ",
+        "와 배송 2주 걸렸는데 박스는 다 찌그러져서 옴ㅋㅋㅋ 다시는 여기서 안 산다 진짜 최악",
+        "이번 패치로 로딩 시간이 30초에서 10초로 줄었습니다.",
+        "헐 대박 드디어 나왔다!!! 3년 기다렸는데 눈물남ㅠㅠㅠ",
+        "ㅋㅋㅋㅋ 또 시작이네 저 사람들은 맨날 남 탓만 하지. 수준 알만하다",
+      ];
+      let n = 0;
+      function addComments(count) {
+        const list = document.querySelector(".comment-list");
+        for (let i = 0; i < count; i++) {
+          const li = document.createElement("li");
+          li.className = "comment-item";
+          const div = document.createElement("div");
+          div.className = "comment-text";
+          div.dataset.n = String(n);
+          div.textContent = TEXTS[n % TEXTS.length] + ` (${n})`;
+          li.append(div);
+          list.append(li);
+          window.__exposure[n] = { added: performance.now(), shown: 0, last: null };
+          n++;
+        }
+      }
+      const isRaw = (el) => {
+        if (!el.isConnected || el.hasAttribute("data-eml-inplace")) return false;
+        const style = getComputedStyle(el);
+        return style.display !== "none" && style.visibility !== "hidden" && style.filter === "none";
+      };
+      function sample(now) {
+        for (const el of document.querySelectorAll(".comment-text:not(.eml-view)")) {
+          const rec = window.__exposure[el.dataset.n];
+          if (!rec) continue;
+          if (isRaw(el)) {
+            if (rec.last !== null) rec.shown += now - rec.last;
+            rec.last = now;
+          } else rec.last = null;
+        }
+        requestAnimationFrame(sample);
+      }
+      requestAnimationFrame(sample);
+      // 처음부터 HTML 에 있는 것처럼 바로 넣고, 나중에 불러오는 댓글도 흉내 낸다.
+      document.addEventListener("DOMContentLoaded", () => {
+        addComments(5);
+        setTimeout(() => addComments(5), 1500);
+        setTimeout(() => addComments(5), 3000);
+      });
+    </script>
+  </head>
+  <body>
+    <h1>노출 시간 측정</h1>
+    <ul class="comment-list"></ul>
+  </body>
+</html>
