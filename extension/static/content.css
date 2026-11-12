@@ -1,5 +1,5 @@
 /* emotionless 가 페이지에 넣는 요소의 스타일. 사이트 글꼴과 색을 그대로 따른다. */
-[data-eml-hidden] { display: none !important; }
+[data-eml-hidden], [data-eml-gone] { display: none !important; }
 [data-eml-pending] { filter: blur(5px); transition: filter 0.15s; }
 [data-eml-pick] {
   outline: 2px solid #2b5fd9 !important;
@@ -113,6 +113,7 @@
 }
 .eml-pill:hover { box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22); }
 .eml-pill:focus-visible { outline: 2px solid #2456c8; outline-offset: 2px; }
+.eml-pill.eml-stale { max-width: min(320px, calc(100vw - 32px)); font-weight: 500; line-height: 1.45; white-space: normal; text-align: left; }
 .eml-pill-chips { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
 .eml-pill-bar { display: flex; gap: 2px; height: 4px; border-radius: 2px; overflow: hidden; }
 .eml-pill-collapsed { padding: 6px 10px; border-radius: 999px; }

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { strip, isUnchanged, hasProfanity, splitUrls } from "../src/shared/strip.js";
 import { classify, rankGroups } from "../src/shared/emotion.js";
+import { normalize, DEFAULTS } from "../src/shared/settings.js";
 
 test("strip: 욕설·ㅋㅋ·강조어를 지우고 사실은 남긴다", () => {
   assert.equal(
@@ -118,6 +119,15 @@ test("rankGroups: 댓글이 많은 감정부터, 같으면 정해진 순서대�
   ]);
   assert.deepEqual(rankGroups({ neutral: 2, anger: 2, sad: 0 }), ["anger", "neutral"]);
   assert.deepEqual(rankGroups({}), []);
+});
+
+test("normalize: 빠진 설정은 기본값으로, 옛 접기 스위치는 단계로 옮긴다", () => {
+  assert.deepEqual(normalize({}), DEFAULTS);
+  assert.equal(normalize({ fold: false }).level, "clean");
+  assert.equal(normalize({ fold: true }).level, "fold");
+  assert.equal(normalize({ fold: false, level: "hide" }).level, "hide");
+  assert.equal(normalize({ level: "엉뚱한 값" }).level, "fold");
+  assert.equal(normalize({ enabled: false, showPill: false }).enabled, false);
 });
 
 test("classify: 점수가 전부 낮으면 중립", () => {

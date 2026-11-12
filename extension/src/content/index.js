@@ -1,10 +1,20 @@
 // 콘텐츠 스크립트: 댓글을 찾아 두고, 화면에 보이는(곧 보일) 댓글만 분류해 표시한다.
 // 설정이 바뀌면 새로 고침 없이 바로 반영한다.
 import { findComments } from "./detect.js";
-import { renderComment, removeView, renderPill, measure, syncTypography, fixClipping } from "./render.js";
+import {
+  renderComment,
+  removeView,
+  hideComment,
+  renderPill,
+  renderStaleNotice,
+  measure,
+  syncTypography,
+  fixClipping,
+} from "./render.js";
 import { startPicker, stopPicker } from "./picker.js";
 import { GROUPS } from "../shared/emotion.js";
 import { strip, isUnchanged, hasProfanity } from "../shared/strip.js";
+import { DEFAULTS, STORAGE_KEYS, normalize } from "../shared/settings.js";
 
 const BATCH = 8;
 const MAX_CHARS = 300;
@@ -14,7 +24,6 @@ const PENDING_TIMEOUT_MS = 8000;
 const CACHE_LIMIT = 3000;
 const HANGUL = /[가-힣]/;
 
-const DEFAULTS = { enabled: true, fold: true, showPill: true, pillCollapsed: false, disabledHosts: [], selectors: {} };
 const isTop = window === window.top;
 // 댓글 위치는 댓글이 실제로 있는 문서(프레임)의 주소로 기억한다.
 const host = location.hostname;
@@ -30,7 +39,8 @@ const siteHost = (() => {
 
 let settings = { ...DEFAULTS };
 let running = false;
-// textEl -> { item, original, raw, group, view, state: "waiting" | "queued" | "done" }
+// textEl -> { item, original, raw, group, view, goneEl, state: "waiting" | "queued" | "done" }
+// view: 순화본 요소 (원문 요소를 그대로 꾸민 경우 null), goneEl: 아예 숨긴 경우 숨겨진 요소
 const tracked = new Map();
 const queue = [];
 // 같은 글을 다시 분류하지 않도록 결과를 기억한다 (설정을 바꿔 다시 그릴 때, 사이트가 요소를 재사용할 때).
@@ -92,7 +102,10 @@ const isRendered = (el) => el.isConnected && (el.offsetParent !== null || el.get
 function localCounts() {
   const counts = {};
   for (const [textEl, entry] of tracked) {
-    if (entry.group && isRendered(entry.view ?? textEl)) counts[entry.group] = (counts[entry.group] ?? 0) + 1;
+    if (!entry.group) continue;
+    // 우리가 숨긴 댓글은 그 자리가 화면에 있는지로 판단한다.
+    const where = entry.goneEl ? (entry.goneEl === textEl ? entry.item : entry.goneEl.parentElement) : entry.view ?? textEl;
+    if (where && isRendered(where)) counts[entry.group] = (counts[entry.group] ?? 0) + 1;
   }
   return counts;
 }
@@ -185,6 +198,7 @@ function growChildFrame(event) {
 // ── 댓글 처리 ────────────────────────────────────────────────────────────
 function forget(textEl, entry) {
   visibility?.unobserve(textEl);
+  entry.goneEl?.removeAttribute("data-eml-gone");
   removeView(textEl, entry.view);
   tracked.delete(textEl);
 }
@@ -207,10 +221,26 @@ function contextAlive() {
   }
 }
 
+// 확장이 업데이트되면 이미 열려 있던 페이지의 이 스크립트는 확장과 연결이 끊긴다.
+// 페이지를 원래대로 돌려놓고, 댓글을 처리하던 페이지였다면 새로 고치라고 알린다.
+const STALE_MSG = "__emotionless_stale";
+
+function handleDisconnected() {
+  const wasWorking = tracked.size > 0;
+  stop();
+  if (!wasWorking) return;
+  if (isTop) renderStaleNotice();
+  else window.top.postMessage({ type: STALE_MSG }, "*");
+}
+
 function handleFailure() {
+  if (!contextAlive()) {
+    handleDisconnected();
+    return;
+  }
   failures++;
   stop();
-  if (!contextAlive() || failures > MAX_RETRIES) return;
+  if (failures > MAX_RETRIES) return;
   setTimeout(() => {
     if (contextAlive() && isActive()) start();
   }, 5000 * failures);
@@ -249,18 +279,26 @@ async function pump() {
           forget(textEl, entry);
           return;
         }
-        const cleaned = strip(entry.original);
         // 욕설이 있는데 모델이 중립으로 본 댓글은 분노로 표시한다.
         entry.group = groups[index] === "neutral" && hasProfanity(entry.original) ? "anger" : groups[index];
         entry.state = "done";
         visibility.unobserve(textEl);
+        const level = settings.level;
+        if (level === "hide" && GROUPS[entry.group].fold) {
+          const hasReplies = [...tracked.values()].some((other) => other.item !== entry.item && entry.item.contains(other.item));
+          entry.goneEl = hideComment(textEl, entry.item, hasReplies);
+          return;
+        }
+        // "표시만" 단계에서는 글을 건드리지 않는다.
+        const cleaned = level === "label" ? entry.original : strip(entry.original);
         const data = {
           group: entry.group,
           original: entry.original,
           cleaned,
-          changed: !isUnchanged(entry.original, cleaned),
+          changed: level !== "label" && !isUnchanged(entry.original, cleaned),
         };
-        entry.view = renderComment(textEl, data, settings, metrics[index]);
+        const display = { fold: level === "fold" };
+        entry.view = renderComment(textEl, data, display, metrics[index]);
         if (!entry.view) {
           inPlace.push({
             textEl,
@@ -268,7 +306,7 @@ async function pump() {
             wasClipped: metrics[index].clipped,
             fallback: () => {
               removeView(textEl, null);
-              entry.view = renderComment(textEl, data, settings, metrics[index], { forceView: true });
+              entry.view = renderComment(textEl, data, display, metrics[index], { forceView: true });
             },
           });
         }
@@ -296,6 +334,10 @@ function onVisible(entries) {
 
 function scan() {
   if (!running) return;
+  if (!contextAlive()) {
+    handleDisconnected();
+    return;
+  }
   // 사라졌거나 내용이 바뀐 댓글 정리 (사이트가 요소를 재사용하는 경우)
   for (const [textEl, entry] of tracked) {
     const stale = !textEl.isConnected || rawText(textEl) !== entry.raw || (entry.view && !entry.view.isConnected);
@@ -386,7 +428,7 @@ function onSettingsChanged(changes, area) {
   const previous = settings;
   const next = { ...settings };
   for (const key of Object.keys(DEFAULTS)) if (key in changes) next[key] = changes[key].newValue ?? DEFAULTS[key];
-  settings = next;
+  settings = normalize(next);
 
   if (isActive() !== wasActive) {
     if (isActive()) start();
@@ -395,7 +437,7 @@ function onSettingsChanged(changes, area) {
   }
   if (!running) return;
   const locationChanged = previous.selectors[host] !== settings.selectors[host];
-  if (previous.fold !== settings.fold || locationChanged) rerender();
+  if (previous.level !== settings.level || locationChanged) rerender();
   else publishCounts();
 }
 
@@ -417,12 +459,17 @@ function onMessage(msg, _sender, sendResponse) {
 }
 
 async function main() {
-  settings = { ...DEFAULTS, ...(await chrome.storage.local.get(Object.keys(DEFAULTS))) };
+  settings = normalize(await chrome.storage.local.get(STORAGE_KEYS));
 
   chrome.storage.onChanged.addListener(onSettingsChanged);
   chrome.runtime.onMessage.addListener(onMessage);
   window.addEventListener("message", growChildFrame);
-  if (isTop) window.addEventListener("message", onFrameCounts);
+  if (isTop) {
+    window.addEventListener("message", onFrameCounts);
+    window.addEventListener("message", (event) => {
+      if (event.data?.type === STALE_MSG) renderStaleNotice();
+    });
+  }
   // 새로 고침 없이 화면만 바뀌는 사이트(유튜브 등)에서 페이지가 바뀌면 댓글과 숫자를 다시 살핀다.
   const onNavigated = () => {
     if (!running) return;

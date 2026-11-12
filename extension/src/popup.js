@@ -1,7 +1,16 @@
 // 설정 팝업. 현재 페이지의 댓글 분위기를 보여 주고, 설정을 바꾸면 새로 고침 없이 바로 적용된다.
 import { GROUPS, GROUP_ORDER, rankGroups } from "./shared/emotion.js";
+import { DEFAULTS, STORAGE_KEYS, normalize } from "./shared/settings.js";
+import { strip } from "./shared/strip.js";
 
-const DEFAULTS = { enabled: true, fold: true, showPill: true, disabledHosts: [], selectors: {} };
+// 걸러 보는 정도마다의 설명과, 화난 댓글 한 줄이 어떻게 보이는지의 예시
+const LEVEL_SAMPLE = "아니 진짜 이걸 업데이트라고 내놓은 거냐ㅋㅋㅋ 제정신임??";
+const LEVEL_INFO = {
+  label: { sub: "감정만 표시하고 글은 그대로 둬요.", preview: LEVEL_SAMPLE },
+  clean: { sub: "욕설과 과한 표현을 지워요.", preview: strip(LEVEL_SAMPLE) },
+  fold: { sub: "표현을 지우고, 분노·비난 댓글은 한 줄로 접어요.", preview: "분노 댓글을 접었습니다 · 눌러서 보기" },
+  hide: { sub: "표현을 지우고, 분노·비난 댓글은 아예 숨겨요.", preview: "화난 댓글은 보이지 않아요" },
+};
 const POLL_MS = 1000;
 
 // 가장 많은 감정에 따라 보여 주는 한 줄
@@ -114,14 +123,20 @@ function render() {
   const custom = (status?.customHosts ?? []).length > 0;
 
   $("enabled").checked = settings.enabled;
-  $("fold").checked = settings.fold;
+  for (const radio of document.querySelectorAll('input[name="level"]')) {
+    radio.checked = radio.value === settings.level;
+    radio.disabled = !settings.enabled;
+  }
+  $("levelSub").textContent = LEVEL_INFO[settings.level].sub;
+  $("preview").dataset.level = settings.level;
+  $("previewText").textContent = LEVEL_INFO[settings.level].preview;
   $("showPill").checked = settings.showPill;
   $("site").checked = siteOn;
   $("host").textContent = host;
   $("siteGroup").hidden = !host;
   $("locationGroup").hidden = !host;
   $("controls").toggleAttribute("data-dim", !settings.enabled);
-  for (const id of ["site", "fold", "showPill"]) $(id).disabled = !settings.enabled;
+  for (const id of ["site", "showPill"]) $(id).disabled = !settings.enabled;
 
   $("pick").disabled = !working;
   $("pick").textContent = custom ? "다시 지정" : "직접 지정";
@@ -129,7 +144,7 @@ function render() {
   $("resetPick").disabled = !working;
   $("locationSub").textContent = custom
     ? "직접 알려 준 위치를 쓰고 있어요."
-    : "자동으로 찾고 있어요. 댓글이 그대로 보이면 직접 알려 주세요.";
+    : "자동으로 찾아요. 안 바뀌면 알려 주세요.";
   // 댓글을 못 찾았을 때는 위치 지정이 다음에 할 일이므로 눈에 띄게 한다.
   $("pick").classList.toggle("btn-primary", working && total === 0 && !custom);
 
@@ -147,7 +162,7 @@ function render() {
     setMood({
       state: "reload",
       title: "페이지를 새로 고치면 시작해요",
-      sub: "설치하기 전에 열어 둔 페이지라 아직 적용되지 않았어요.",
+      sub: "확장이 설치되거나 업데이트되기 전에 열어 둔 페이지예요.",
       showReload: true,
     });
   } else if (total === 0) {
@@ -171,10 +186,10 @@ function render() {
 let saving = false;
 
 async function refresh() {
-  const [nextStatus, stored] = await Promise.all([ask({ type: "status" }), chrome.storage.local.get(Object.keys(DEFAULTS))]);
+  const [nextStatus, stored] = await Promise.all([ask({ type: "status" }), chrome.storage.local.get(STORAGE_KEYS)]);
   status = nextStatus;
   // 페이지에서 바뀐 설정(직접 지정한 댓글 위치 등)을 따라간다. 저장 중일 때는 방금 고른 값을 덮어쓰지 않는다.
-  if (!saving) settings = { ...DEFAULTS, ...stored };
+  if (!saving) settings = normalize(stored);
   render();
 }
 
@@ -190,13 +205,16 @@ async function save(patch) {
 
 async function main() {
   $("version").textContent = `버전 ${chrome.runtime.getManifest().version}`;
-  settings = { ...DEFAULTS, ...(await chrome.storage.local.get(Object.keys(DEFAULTS))) };
+  settings = normalize(await chrome.storage.local.get(STORAGE_KEYS));
+  $("previewFace").src = emojiUrl("anger");
   tab = await findTab();
   await refresh();
   setInterval(refresh, POLL_MS);
 
   $("enabled").addEventListener("change", (e) => save({ enabled: e.target.checked }));
-  $("fold").addEventListener("change", (e) => save({ fold: e.target.checked }));
+  $("levels").addEventListener("change", (e) => {
+    if (e.target.name === "level") save({ level: e.target.value });
+  });
   $("showPill").addEventListener("change", (e) => save({ showPill: e.target.checked }));
   $("site").addEventListener("change", (e) => {
     const host = pageHost();

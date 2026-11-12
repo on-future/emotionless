@@ -92,7 +92,7 @@ const el = (tag, className, text) => {
 /**
  * @param {Element} textEl 원문 요소
  * @param {{group: string, original: string, cleaned: string, changed: boolean}} data
- * @param {{fold: boolean}} settings
+ * @param {{fold: boolean}} settings fold: 분노·비난 댓글을 한 줄로 접을지
  * @param {ReturnType<typeof measure>} metrics 화면을 바꾸기 전에 읽어 둔 값
  * @param {{forceView?: boolean}} [options] forceView: 원문 요소를 꾸미지 않고 항상 순화본으로 대체
  * @returns {Element|null} 순화본 요소. 원문 요소를 그대로 꾸민 경우 null
@@ -168,6 +168,16 @@ function decorateInPlace(textEl, group, metrics) {
   } catch {}
 }
 
+/**
+ * 댓글을 아예 숨긴다. 답글이 달린 댓글은 통째로 숨기면 답글까지 사라지므로 본문만 숨긴다.
+ * @returns {Element} 숨긴 요소
+ */
+export function hideComment(textEl, item, hasReplies) {
+  const target = hasReplies ? textEl : item;
+  target.setAttribute("data-eml-gone", "");
+  return target;
+}
+
 export function removeView(textEl, view) {
   view?.remove();
   if (textEl.hasAttribute("data-eml-inplace")) {
@@ -191,6 +201,19 @@ export function fixClipping(list) {
   const tight = newlyClipped(list);
   for (const { textEl } of tight) textEl.setAttribute("data-eml-tight", "");
   for (const { fallback } of newlyClipped(tight)) fallback();
+}
+
+let staleNotice = null;
+
+/** 확장이 업데이트되어 이 페이지에서 더는 동작하지 못할 때, 새로 고치면 된다는 것을 알린다. */
+export function renderStaleNotice() {
+  pill?.remove();
+  pill = null;
+  if (staleNotice?.isConnected) return;
+  staleNotice = el("button", "eml-pill eml-stale", "Emotionless가 업데이트됐어요. 눌러서 새로 고치면 다시 동작해요.");
+  staleNotice.type = "button";
+  staleNotice.onclick = () => location.reload();
+  document.documentElement.append(staleNotice);
 }
 
 let pill = null;
