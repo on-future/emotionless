@@ -122,8 +122,12 @@ function findItemsAuto() {
     }
     for (const members of groups.values()) {
       if (members.length < 2) continue;
-      const withText = members.filter((m) => HANGUL.test(m.textContent));
-      if (withText.length < 2 || withText.length < members.length * 0.6) continue;
+      // 대부분 글이 들어 있는 반복 블록이어야 댓글 목록으로 본다. 그중 한글이 있는 것만 처리 대상이다
+      // (영어 댓글이 섞여 있거나 일부가 비어 있어도 목록 전체를 버리지 않는다).
+      const filled = members.filter((m) => m.textContent.trim());
+      if (filled.length < 2 || filled.length < members.length * 0.6) continue;
+      const withText = filled.filter((m) => HANGUL.test(m.textContent));
+      if (!withText.length) continue;
       const hintedMembers = members.filter(hintOf).length;
       if (!hintedNearby(parent) && hintedMembers < members.length * 0.6) continue;
       items.push(...withText);

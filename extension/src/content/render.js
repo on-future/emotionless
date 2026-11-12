@@ -194,6 +194,7 @@ export function fixClipping(list) {
 }
 
 let pill = null;
+let pillSignature = "";
 
 /**
  * 화면 오른쪽 아래에 떠 있는 반응 요약. 누르면 접히고 다시 누르면 펼쳐진다.
@@ -208,14 +209,20 @@ export function renderPill(counts, collapsed, onToggle) {
   if (!total) {
     pill?.remove();
     pill = null;
+    pillSignature = "";
     return;
   }
   if (!pill || !pill.isConnected) {
     pill = el("button", "eml-pill");
     pill.type = "button";
     document.documentElement.append(pill);
+    pillSignature = "";
   }
   pill.onclick = onToggle;
+  // 달라진 것이 없으면 다시 그리지 않는다 (그림이 깜빡이지 않게).
+  const signature = `${collapsed}|${groups.map((group) => `${group}:${counts[group]}`).join(",")}`;
+  if (signature === pillSignature) return;
+  pillSignature = signature;
   pill.classList.toggle("eml-pill-collapsed", collapsed);
   const summaryText = groups.map((group) => `${GROUPS[group].label} ${counts[group]}`).join(", ");
   pill.title = `emotionless · 지금까지 본 댓글 ${total}개 (${summaryText})\n누르면 ${collapsed ? "펼칩니다" : "접습니다"}`;

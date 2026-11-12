@@ -41,6 +41,8 @@ let pumping = false;
 let visibility = null;
 let domObserver = null;
 let themeObserver = null;
+let observedBody = null;
+let countTimer = null;
 
 const isActive = () => settings.enabled && !settings.disabledHosts.includes(siteHost);
 const rawText = (el) => (el.textContent ?? "").replace(/\s+/g, " ").trim();
@@ -83,15 +85,27 @@ async function classify(texts) {
 const COUNT_MSG = "__emotionless_counts";
 const frameInfo = new Map();
 
+// 화면에 그려져 있는지. 사이트가 이전 화면을 지우지 않고 숨겨만 두는 경우를 가려낸다.
+const isRendered = (el) => el.isConnected && (el.offsetParent !== null || el.getClientRects().length > 0);
+
+// 지금 페이지에 실제로 보이는 댓글만 센다. 다른 화면으로 넘어가 숨겨진 댓글은 세지 않는다.
 function localCounts() {
   const counts = {};
-  for (const entry of tracked.values()) if (entry.group) counts[entry.group] = (counts[entry.group] ?? 0) + 1;
+  for (const [textEl, entry] of tracked) {
+    if (entry.group && isRendered(entry.view ?? textEl)) counts[entry.group] = (counts[entry.group] ?? 0) + 1;
+  }
   return counts;
 }
 
 function totalCounts() {
   const total = localCounts();
-  for (const { counts } of frameInfo.values()) {
+  const frames = new Set([...document.querySelectorAll("iframe")].map((f) => f.contentWindow));
+  for (const [source, { counts }] of frameInfo) {
+    // 사라진 프레임의 숫자는 버린다.
+    if (!frames.has(source)) {
+      frameInfo.delete(source);
+      continue;
+    }
     for (const [group, count] of Object.entries(counts)) total[group] = (total[group] ?? 0) + count;
   }
   return total;
@@ -101,16 +115,24 @@ function showPill() {
   const visible = isActive() && settings.showPill;
   renderPill(visible ? totalCounts() : {}, settings.pillCollapsed, () => {
     settings.pillCollapsed = !settings.pillCollapsed;
-    chrome.storage.local.set({ pillCollapsed: settings.pillCollapsed });
+    try {
+      chrome.storage.local.set({ pillCollapsed: settings.pillCollapsed });
+    } catch {}
     showPill();
   });
 }
 
+let lastPosted = "";
+
 function publishCounts() {
   if (isTop) showPill();
   else {
-    const customHost = settings.selectors[host] ? host : null;
-    window.top.postMessage({ type: COUNT_MSG, counts: localCounts(), customHost }, "*");
+    const message = { type: COUNT_MSG, counts: localCounts(), customHost: settings.selectors[host] ? host : null };
+    // 달라진 것이 없으면 보내지 않는다.
+    const signature = JSON.stringify(message);
+    if (signature === lastPosted) return;
+    lastPosted = signature;
+    window.top.postMessage(message, "*");
   }
 }
 
@@ -172,6 +194,28 @@ function forgetAll() {
   queue.length = 0;
 }
 
+// 분류를 못 하게 되면 페이지를 원래대로 돌려놓는다. 흐리게 해 둔 댓글이 그대로 남으면 읽을 수 없기 때문이다.
+// 확장이 업데이트되어 이 페이지와의 연결이 끊긴 경우에는 새로 고칠 때까지 쉰다. 그 밖에는 조금 뒤에 다시 시도한다.
+const MAX_RETRIES = 3;
+let failures = 0;
+
+function contextAlive() {
+  try {
+    return !!chrome.runtime?.id;
+  } catch {
+    return false;
+  }
+}
+
+function handleFailure() {
+  failures++;
+  stop();
+  if (!contextAlive() || failures > MAX_RETRIES) return;
+  setTimeout(() => {
+    if (contextAlive() && isActive()) start();
+  }, 5000 * failures);
+}
+
 // 대기열을 비운다. 가장 최근에 화면에 들어온 댓글부터 처리한다.
 async function pump() {
   if (pumping) return;
@@ -186,10 +230,15 @@ async function pump() {
       const groups = await classify(batch.map((textEl) => tracked.get(textEl).original.slice(0, MAX_CHARS)));
       // 기다리는 동안 꺼졌으면 아무것도 그리지 않는다.
       if (!running) break;
+      if (!groups) {
+        handleFailure();
+        break;
+      }
+      failures = 0;
       // 읽기를 먼저 끝내고 쓰기를 몰아서 한다.
       const metrics = batch.map((textEl) => {
         const entry = tracked.get(textEl);
-        return entry && groups && textEl.isConnected ? measure(textEl, entry.item) : null;
+        return entry && textEl.isConnected ? measure(textEl, entry.item) : null;
       });
       const inPlace = [];
       batch.forEach((textEl, index) => {
@@ -227,11 +276,6 @@ async function pump() {
       fixClipping(inPlace);
       publishCounts();
       reportFrameHeight();
-      if (!groups) {
-        // 분류가 실패하면 남은 댓글의 흐림 처리를 풀고 멈춘다.
-        for (const textEl of queue.splice(0)) textEl.removeAttribute("data-eml-pending");
-        break;
-      }
     }
   } finally {
     pumping = false;
@@ -258,7 +302,8 @@ function scan() {
     if (stale) forget(textEl, entry);
   }
   for (const { item, textEl } of findComments(settings.selectors[host] ?? null)) {
-    if (tracked.has(textEl)) continue;
+    // 숨겨진 화면에 남아 있는 댓글은 다시 보일 때 처리한다.
+    if (tracked.has(textEl) || !isRendered(textEl)) continue;
     const original = readText(textEl);
     if (!original || !HANGUL.test(original)) continue;
     tracked.set(textEl, { item, original, raw: rawText(textEl), group: null, view: null, state: "waiting" });
@@ -266,6 +311,8 @@ function scan() {
     textEl.setAttribute("data-eml-pending", "");
     visibility.observe(textEl);
   }
+  // 댓글이 사라졌거나 다른 화면으로 넘어갔으면 숫자도 따라 바뀐다.
+  publishCounts();
 }
 
 function scheduleScan() {
@@ -296,7 +343,8 @@ function start() {
     });
     if (external) scheduleScan();
   });
-  domObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
+  // body 를 통째로 갈아 끼우는 사이트도 있으므로 문서 전체를 지켜본다.
+  domObserver.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
   // 테마 전환은 보통 html 이나 body 의 속성을 바꾸거나, 시스템 설정을 따라간다.
   themeObserver = new MutationObserver(scheduleThemeSync);
   const themeAttributes = {
@@ -304,7 +352,8 @@ function start() {
     attributeFilter: ["class", "style", "dark", "data-theme", "data-color-mode", "theme"],
   };
   themeObserver.observe(document.documentElement, themeAttributes);
-  themeObserver.observe(document.body, themeAttributes);
+  observedBody = document.body;
+  themeObserver.observe(observedBody, themeAttributes);
   scan();
   publishCounts();
 }
@@ -314,6 +363,8 @@ function stop() {
   running = false;
   clearTimeout(scanTimer);
   clearTimeout(themeTimer);
+  clearTimeout(countTimer);
+  countTimer = null;
   domObserver.disconnect();
   themeObserver.disconnect();
   forgetAll();
@@ -372,6 +423,36 @@ async function main() {
   chrome.runtime.onMessage.addListener(onMessage);
   window.addEventListener("message", growChildFrame);
   if (isTop) window.addEventListener("message", onFrameCounts);
+  // 새로 고침 없이 화면만 바뀌는 사이트(유튜브 등)에서 페이지가 바뀌면 댓글과 숫자를 다시 살핀다.
+  const onNavigated = () => {
+    if (!running) return;
+    // body 가 새것으로 바뀌었으면 테마 감시를 새 body 에 다시 건다.
+    if (document.body && document.body !== observedBody) {
+      observedBody = document.body;
+      themeObserver.observe(observedBody, {
+        attributes: true,
+        attributeFilter: ["class", "style", "dark", "data-theme", "data-color-mode", "theme"],
+      });
+    }
+    scheduleScan();
+    // 화면 전환이 끝난 뒤 한 번 더 확인한다.
+    setTimeout(() => running && scan(), 1500);
+  };
+  window.navigation?.addEventListener("navigatesuccess", onNavigated);
+  window.addEventListener("popstate", onNavigated);
+  window.addEventListener("pageshow", onNavigated);
+  // 답글을 접고 펴는 것처럼 화면에 보이는 댓글이 달라지는 경우를 스크롤할 때 다시 센다.
+  window.addEventListener(
+    "scroll",
+    () => {
+      if (!running || countTimer) return;
+      countTimer = setTimeout(() => {
+        countTimer = null;
+        if (running) publishCounts();
+      }, 600);
+    },
+    { passive: true, capture: true },
+  );
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", scheduleThemeSync);
   // 접기·펼치기로 높이가 바뀔 때도 알린다. 버튼이 이벤트 전파를 막으므로 캡처 단계에서 듣는다.
   document.addEventListener(

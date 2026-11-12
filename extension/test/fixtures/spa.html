@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>emotionless SPA 테스트</title>
+    <style>
+      body { font: 15px/1.6 system-ui, sans-serif; max-width: 640px; margin: 24px auto; padding: 0 16px; }
+      .comment-list, .reply-list { list-style: none; padding: 0; }
+      .comment-item { border-bottom: 1px solid #ddd; padding: 12px 0; }
+      .reply-list.collapsed { display: none; }
+      nav button { margin-right: 6px; }
+    </style>
+  </head>
+  <body>
+    <!-- 새로 고침 없이 화면만 바꾸는 사이트를 흉내 낸다. 버튼마다 서로 다른 방식으로 화면을 바꾼다. -->
+    <nav>
+      <button id="goHome">홈으로 (댓글 화면을 숨기기만 함)</button>
+      <button id="goPost">글로 돌아가기</button>
+      <button id="nextPost">다음 글 (같은 요소에 글만 바꿈)</button>
+      <button id="replacePost">다른 글 (목록을 새로 만듦)</button>
+      <button id="swapBody">body 통째로 교체</button>
+      <button id="toggleReplies">답글 접기/펴기</button>
+      <button id="more">댓글 더 불러오기</button>
+    </nav>
+
+    <main id="home" hidden><h1>홈</h1><p>여기에는 댓글이 없습니다.</p></main>
+
+    <main id="post">
+      <h1 id="title">첫 번째 글</h1>
+      <ul class="comment-list" id="list">
+        <li class="comment-item"><div class="comment-text">아니 진짜 이걸 지금 업데이트라고 내놓은 거냐? 렉 때문에 게임을 할 수가 없는데 ㅋㅋㅋ</div>
+          <ul class="reply-list" id="replies">
+            <li class="comment-item"><div class="comment-text">저는 이번 패치 이후로 오히려 프레임이 안정적이었습니다.</div></li>
+            <li class="comment-item"><div class="comment-text">와 진짜 공감합니다ㅠㅠ 저도 계속 튕겨요</div></li>
+          </ul>
+        </li>
+        <li class="comment-item"><div class="comment-text">이번 패치로 로딩 시간이 30초에서 10초로 줄었습니다.</div></li>
+        <li class="comment-item"><div class="comment-text">헐 대박 드디어 나왔다!!! 3년 기다렸는데 눈물남ㅠㅠㅠ</div></li>
+      </ul>
+    </main>
+
+    <script>
+      const SECOND = [
+        "환불 요청한 지 열흘이 지났는데 아직도 답변이 없습니다. 정말 너무 화가 납니다.",
+        "미쳤다 이번 OST 진짜 미쳤음... 작곡가님 제발 계속 해주세요ㅠㅠ",
+        "내일 오후 3시에 점검이 있습니다.",
+      ];
+      const THIRD = ["서버 점검 시간이 또 연장됐네 진짜 짜증난다", "이번 이벤트 보상은 꽤 괜찮은 것 같습니다."];
+      const $ = (id) => document.getElementById(id);
+      const item = (text) => { const li = document.createElement("li"); li.className = "comment-item"; const d = document.createElement("div"); d.className = "comment-text"; d.textContent = text; li.append(d); return li; };
+
+      // 실제 사이트처럼, 처음 만든 요소를 기억해 두고 그 요소의 글만 바꾼다.
+      const bodies = [...document.querySelectorAll("#list > .comment-item > .comment-text")];
+
+      $("goHome").onclick = () => { history.pushState({}, "", "?page=home"); $("post").hidden = true; $("home").hidden = false; };
+      $("goPost").onclick = () => { history.pushState({}, "", "?page=post"); $("post").hidden = false; $("home").hidden = true; };
+      // 요소는 그대로 두고 글자만 바꾼다 (요소를 재사용하는 사이트)
+      $("nextPost").onclick = () => {
+        history.pushState({}, "", "?post=2");
+        $("title").textContent = "두 번째 글";
+        $("replies")?.remove();
+        bodies.forEach((el, i) => (el.textContent = SECOND[i] ?? ""));
+      };
+      // 목록을 통째로 새로 만든다
+      $("replacePost").onclick = () => {
+        history.pushState({}, "", "?post=3");
+        $("title").textContent = "세 번째 글";
+        const list = document.createElement("ul");
+        list.className = "comment-list";
+        list.id = "list";
+        list.append(...THIRD.map(item));
+        $("list").replaceWith(list);
+      };
+      $("swapBody").onclick = () => {
+        history.pushState({}, "", "?post=4");
+        const body = document.createElement("body");
+        body.innerHTML = '<main><h1>네 번째 글</h1><ul class="comment-list"><li class="comment-item"><div class="comment-text">와 이건 진짜 최고다!!! 다들 꼭 해보세요ㅋㅋ</div></li><li class="comment-item"><div class="comment-text">업데이트 내용이 공지와 다릅니다. 확인 부탁드립니다.</div></li></ul></main>';
+        document.documentElement.replaceChild(body, document.body);
+      };
+      $("toggleReplies").onclick = () => $("replies").classList.toggle("collapsed");
+      $("more").onclick = () => $("list").append(item("공지는 왜 항상 늦게 올리는 거임? ㅡㅡ"));
+    </script>
+  </body>
+</html>
