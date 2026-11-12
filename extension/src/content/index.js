@@ -12,9 +12,11 @@ import {
   fixInPlace,
 } from "./render.js";
 import { startPicker, stopPicker } from "./picker.js";
+import { openEmotionPicker, openWordMenu, openConsent, closePopover } from "./feedback.js";
 import { GROUPS } from "../shared/emotion.js";
 import { strip, isUnchanged, hasProfanity } from "../shared/strip.js";
-import { DEFAULTS, STORAGE_KEYS, normalize } from "../shared/settings.js";
+import { DEFAULTS, STORAGE_KEYS, DATA_KEYS, normalize, normalizeData } from "../shared/settings.js";
+import { learnedGroup, addFix, textKey, OWN_WEIGHT, SHARED_WEIGHT } from "../shared/learn.js";
 
 const BATCH = 8;
 const MAX_CHARS = 300;
@@ -39,12 +41,45 @@ const siteHost = (() => {
 
 let settings = { ...DEFAULTS };
 let running = false;
-// textEl -> { item, original, raw, group, view, goneEl, state: "waiting" | "queued" | "done" }
-// view: 순화본 요소 (원문 요소를 그대로 꾸민 경우 null), goneEl: 아예 숨긴 경우 숨겨진 요소
+// textEl -> { item, original, raw, group, v, cleaned, view, goneEl, state: "waiting" | "queued" | "done" }
+// v: 모델 점수, cleaned: 순화본 글, view: 순화본 요소 (원문 요소를 그대로 꾸민 경우 null),
+// goneEl: 아예 숨긴 경우 숨겨진 요소
 const tracked = new Map();
 const queue = [];
-// 같은 글을 다시 분류하지 않도록 결과를 기억한다 (설정을 바꿔 다시 그릴 때, 사이트가 요소를 재사용할 때).
+// 같은 글을 다시 분류하지 않도록 모델의 결과를 기억한다 (설정을 바꿔 다시 그릴 때, 사이트가 요소를 재사용할 때).
+// 값: { group: 규칙으로 정한 감정, v: 44개 점수 }
 const groupCache = new Map();
+
+// ── 사용자가 고쳐 준 내용 ────────────────────────────────────────────────
+// 내가 고친 판정과 표현은 바로 적용하고, 서버에서 받은 공유 묶음(여러 사람이 같은 의견을 낸 것)도 함께 쓴다.
+let data = normalizeData();
+let fixByKey = new Map();
+let examples = [];
+let words = { remove: [], keep: [] };
+
+function rebuildLearned() {
+  fixByKey = new Map(data.myFixes.map((fix) => [fix.t, fix.g]));
+  examples = [
+    ...data.myFixes.filter((fix) => Array.isArray(fix.v)).map((fix) => ({ v: fix.v, g: fix.g, w: OWN_WEIGHT })),
+    ...data.shared.examples.map((example) => ({ v: example.v, g: example.g, w: SHARED_WEIGHT })),
+  ];
+  // 내가 정한 것이 공유 묶음보다 우선한다.
+  const mine = data.myWords;
+  words = {
+    remove: [...new Set([...mine.remove, ...data.shared.remove.filter((p) => !mine.keep.includes(p))])],
+    keep: [...new Set([...mine.keep, ...data.shared.keep.filter((p) => !mine.remove.includes(p))])],
+  };
+}
+
+// 이 댓글의 감정을 정한다: 내가 직접 고친 글 → 고친 사례와 점수가 가까운 글 → 모델과 규칙
+function decideGroup(original, result) {
+  const own = fixByKey.get(textKey(original));
+  if (own) return own;
+  const learned = learnedGroup(result.v, examples);
+  if (learned) return learned;
+  // 욕설이 있는데 모델이 중립으로 본 댓글은 분노로 표시한다.
+  return result.group === "neutral" && hasProfanity(original) ? "anger" : result.group;
+}
 let scanTimer = null;
 let themeTimer = null;
 let pumping = false;
@@ -65,7 +100,7 @@ function requestGroups(texts) {
         if (chrome.runtime.lastError || !res || res.error) {
           console.warn("[emotionless] 분류 실패:", chrome.runtime.lastError?.message ?? res?.error);
           resolve(null);
-        } else resolve(res.groups);
+        } else resolve(res.results);
       });
     } catch (err) {
       console.warn("[emotionless] 분류 요청 실패:", err);
@@ -77,9 +112,9 @@ function requestGroups(texts) {
 async function classify(texts) {
   const missing = [...new Set(texts.filter((text) => !groupCache.has(text)))];
   if (missing.length) {
-    const groups = await requestGroups(missing);
-    if (!groups) return null;
-    missing.forEach((text, index) => groupCache.set(text, groups[index]));
+    const results = await requestGroups(missing);
+    if (!results) return null;
+    missing.forEach((text, index) => groupCache.set(text, results[index]));
     // 오래된 것부터 덜어 낸다.
     for (const key of groupCache.keys()) {
       if (groupCache.size <= CACHE_LIMIT) break;
@@ -279,8 +314,8 @@ async function pump() {
           forget(textEl, entry);
           return;
         }
-        // 욕설이 있는데 모델이 중립으로 본 댓글은 분노로 표시한다.
-        entry.group = groups[index] === "neutral" && hasProfanity(entry.original) ? "anger" : groups[index];
+        entry.v = groups[index].v;
+        entry.group = decideGroup(entry.original, groups[index]);
         entry.state = "done";
         visibility.unobserve(textEl);
         const level = settings.level;
@@ -290,7 +325,8 @@ async function pump() {
           return;
         }
         // "표시만" 단계에서는 글을 건드리지 않는다.
-        const cleaned = level === "label" ? entry.original : strip(entry.original);
+        const cleaned = level === "label" ? entry.original : strip(entry.original, words);
+        entry.cleaned = cleaned;
         const data = {
           group: entry.group,
           original: entry.original,
@@ -332,6 +368,29 @@ function onVisible(entries) {
   pump();
 }
 
+function track(item, textEl) {
+  const original = readText(textEl);
+  if (!original || !HANGUL.test(original)) return false;
+  tracked.set(textEl, { item, original, raw: rawText(textEl), group: null, view: null, state: "waiting" });
+  // 처리 전 원문이 읽히지 않도록 흐리게 해 둔다.
+  textEl.setAttribute("data-eml-pending", "");
+  visibility.observe(textEl);
+  return true;
+}
+
+// 댓글 하나만 다시 그린다 (감정을 고쳤을 때). 펼쳐 둔 다른 댓글은 건드리지 않는다.
+function refreshEntry(textEl) {
+  const entry = tracked.get(textEl);
+  if (!entry) return;
+  const { item } = entry;
+  forget(textEl, entry);
+  if (!track(item, textEl)) return;
+  visibility.unobserve(textEl);
+  tracked.get(textEl).state = "queued";
+  queue.push(textEl);
+  pump();
+}
+
 function scan() {
   if (!running) return;
   if (!contextAlive()) {
@@ -346,12 +405,7 @@ function scan() {
   for (const { item, textEl } of findComments(settings.selectors[host] ?? null)) {
     // 숨겨진 화면에 남아 있는 댓글은 다시 보일 때 처리한다.
     if (tracked.has(textEl) || !isRendered(textEl)) continue;
-    const original = readText(textEl);
-    if (!original || !HANGUL.test(original)) continue;
-    tracked.set(textEl, { item, original, raw: rawText(textEl), group: null, view: null, state: "waiting" });
-    // 처리 전 원문이 읽히지 않도록 흐리게 해 둔다.
-    textEl.setAttribute("data-eml-pending", "");
-    visibility.observe(textEl);
+    track(item, textEl);
   }
   // 댓글이 사라졌거나 다른 화면으로 넘어갔으면 숫자도 따라 바뀐다.
   publishCounts();
@@ -370,6 +424,107 @@ function scheduleThemeSync() {
     for (const [textEl, entry] of tracked) if (entry.view?.isConnected) pairs.push({ textEl, view: entry.view });
     if (pairs.length) syncTypography(pairs);
   }, 300);
+}
+
+// ── 판정 고치기 ──────────────────────────────────────────────────────────
+// 얼굴을 누르면 감정을, 글을 드래그하면 표현을 고칠 수 있다. 고친 것은 이 기기에 바로 적용하고,
+// 사용자가 동의했으면 서버에도 보내 모두의 판정을 개선하는 데 쓴다.
+function share(payload, anchor) {
+  const send = () => {
+    try {
+      chrome.runtime.sendMessage({ type: "feedback", payload });
+    } catch {}
+  };
+  if (settings.shareFeedback === true) send();
+  else if (settings.shareFeedback === null && __API_BASE__) {
+    // 처음 한 번만 묻는다.
+    openConsent({
+      x: anchor.x,
+      y: anchor.y,
+      onAnswer: (answer) => {
+        settings.shareFeedback = answer;
+        chrome.storage.local.set({ shareFeedback: answer }).then(() => answer && send());
+      },
+    });
+  }
+}
+
+function fixEmotion(textEl, group, anchor) {
+  const entry = tracked.get(textEl);
+  if (!entry?.v) return;
+  const key = textKey(entry.original);
+  const predicted = entry.group;
+  data.myFixes = addFix(data.myFixes, { t: key, v: entry.v, g: group, at: Date.now() });
+  rebuildLearned();
+  chrome.storage.local.set({ myFixes: data.myFixes });
+  refreshEntry(textEl);
+  share({ kind: "emotion", text: key, predicted, corrected: group, scores: entry.v }, anchor);
+}
+
+function fixWord(textEl, kind, phrase, anchor) {
+  const entry = tracked.get(textEl);
+  if (!entry) return;
+  const other = kind === "remove" ? "keep" : "remove";
+  const myWords = {
+    [kind]: [...new Set([...data.myWords[kind], phrase])],
+    [other]: data.myWords[other].filter((p) => p !== phrase),
+  };
+  // 저장하면 onSettingsChanged 가 불려 새 목록으로 다시 그린다.
+  chrome.storage.local.set({ myWords });
+  share({ kind, text: textKey(entry.original), phrase }, anchor);
+}
+
+// 누른 곳이 어느 댓글의 얼굴인지 찾는다. 원문 요소를 그대로 꾸민 댓글은 얼굴이 배경 그림이라 자리로 판단한다.
+function faceTarget(event) {
+  const target = event.target;
+  if (!(target instanceof Element)) return null;
+  if (target.matches(".eml-msg > .eml-emoji")) {
+    const textEl = target.closest(".eml-view")?.previousElementSibling;
+    return textEl && tracked.has(textEl) ? textEl : null;
+  }
+  const inPlace = target.closest("[data-eml-inplace]");
+  if (inPlace && tracked.has(inPlace) && !target.closest("a, button")) {
+    const rect = inPlace.getBoundingClientRect();
+    const size = parseFloat(getComputedStyle(inPlace).backgroundSize) || 28;
+    if (event.clientX - rect.left <= size + 4 && event.clientY - rect.top <= size + 12) return inPlace;
+  }
+  return null;
+}
+
+function onFaceClick(event) {
+  if (!running) return;
+  const textEl = faceTarget(event);
+  if (!textEl) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const anchor = { x: event.clientX, y: event.clientY - 12 };
+  openEmotionPicker({ ...anchor, current: tracked.get(textEl).group, onPick: (group) => fixEmotion(textEl, group, anchor) });
+}
+
+// 댓글 안의 글을 드래그해 고르면, 그 표현을 지울지 남길지 고르는 작은 메뉴를 띄운다.
+function onSelection() {
+  if (!running) return;
+  const selection = getSelection();
+  const phrase = selection?.toString().replace(/\s+/g, " ").trim() ?? "";
+  if (!selection || selection.isCollapsed || phrase.length < 1 || phrase.length > 40) return;
+  const host = (node) => (node?.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement)?.closest(".eml-view, [data-eml-inplace]");
+  const where = host(selection.anchorNode);
+  if (!where || where !== host(selection.focusNode)) return;
+  const textEl = where.matches("[data-eml-inplace]") ? where : where.previousElementSibling;
+  const entry = textEl && tracked.get(textEl);
+  if (!entry || !entry.original.includes(phrase)) return;
+  // 지금 순화본에 남아 있는 표현이면 "지우기", 원문에만 있는(이미 지워진) 표현이면 "남기기"를 권한다.
+  const stillShown = (entry.cleaned ?? entry.original).includes(phrase);
+  const rect = selection.getRangeAt(0).getBoundingClientRect();
+  const anchor = { x: rect.left + rect.width / 2, y: rect.top };
+  openWordMenu({
+    ...anchor,
+    actions: [stillShown ? { id: "remove", label: "이 표현 지우기" } : { id: "keep", label: "이 표현 남기기" }],
+    onPick: (kind) => {
+      selection.removeAllRanges();
+      fixWord(textEl, kind, phrase, anchor);
+    },
+  });
 }
 
 // ── 켜기 / 끄기 ──────────────────────────────────────────────────────────
@@ -412,6 +567,7 @@ function stop() {
   forgetAll();
   visibility.disconnect();
   stopPicker();
+  closePopover();
   publishCounts();
 }
 
@@ -424,6 +580,14 @@ function rerender() {
 
 function onSettingsChanged(changes, area) {
   if (area !== "local") return;
+  if (DATA_KEYS.some((key) => key in changes)) {
+    const next = { ...data };
+    for (const key of DATA_KEYS) if (key in changes) next[key] = changes[key].newValue;
+    data = normalizeData(next);
+    rebuildLearned();
+    // 표현 목록이 바뀌면 지우는 결과가 달라지므로 다시 그린다. 판정을 고친 것은 그 댓글만 따로 다시 그린다.
+    if (running && ("myWords" in changes || "shared" in changes)) rerender();
+  }
   const wasActive = isActive();
   const previous = settings;
   const next = { ...settings };
@@ -459,9 +623,20 @@ function onMessage(msg, _sender, sendResponse) {
 }
 
 async function main() {
-  settings = normalize(await chrome.storage.local.get(STORAGE_KEYS));
+  const stored = await chrome.storage.local.get([...STORAGE_KEYS, ...DATA_KEYS]);
+  settings = normalize(stored);
+  data = normalizeData(stored);
+  rebuildLearned();
+  // 공유 묶음을 가끔 새로 받아 온다 (맨 위 페이지에서 한 번만 부탁한다).
+  if (isTop && __API_BASE__) {
+    try {
+      chrome.runtime.sendMessage({ type: "sync-shared" });
+    } catch {}
+  }
 
   chrome.storage.onChanged.addListener(onSettingsChanged);
+  document.addEventListener("click", onFaceClick, true);
+  document.addEventListener("mouseup", () => setTimeout(onSelection), true);
   chrome.runtime.onMessage.addListener(onMessage);
   window.addEventListener("message", growChildFrame);
   if (isTop) {

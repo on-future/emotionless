@@ -1,6 +1,6 @@
 // 설정 팝업. 현재 페이지의 댓글 분위기를 보여 주고, 설정을 바꾸면 새로 고침 없이 바로 적용된다.
 import { GROUPS, GROUP_ORDER, rankGroups } from "./shared/emotion.js";
-import { DEFAULTS, STORAGE_KEYS, normalize } from "./shared/settings.js";
+import { DEFAULTS, STORAGE_KEYS, DATA_KEYS, normalize, normalizeData } from "./shared/settings.js";
 import { strip } from "./shared/strip.js";
 
 // 걸러 보는 정도마다의 설명과, 화난 댓글 한 줄이 어떻게 보이는지의 예시
@@ -29,6 +29,7 @@ const $ = (id) => document.getElementById(id);
 const emojiUrl = (group) => chrome.runtime.getURL(`emoji/${group}.png`);
 
 let settings = { ...DEFAULTS };
+let data = normalizeData();
 let tab = null;
 // null: 이 페이지의 콘텐츠 스크립트가 응답하지 않음
 let status = null;
@@ -63,7 +64,7 @@ function pageHost() {
 // 페이지 종류: ok(동작 중이거나 켤 수 있음) / reload(새로 고쳐야 시작) / unsupported(확장이 동작할 수 없는 페이지)
 function pageKind() {
   if (status) return "ok";
-  if (!tab?.url) return "reload";
+  if (!tab?.url) return "unsupported";
   return /^https?:/.test(tab.url) ? "reload" : "unsupported";
 }
 
@@ -131,6 +132,16 @@ function render() {
   $("preview").dataset.level = settings.level;
   $("previewText").textContent = LEVEL_INFO[settings.level].preview;
   $("showPill").checked = settings.showPill;
+  // 서버가 설정돼 있을 때만 보내기 스위치를 보여 준다.
+  $("shareRow").hidden = !__API_BASE__;
+  $("shareFeedback").checked = settings.shareFeedback === true;
+  $("shareFeedback").disabled = !settings.enabled;
+  const fixed = data.myFixes.length;
+  const worded = data.myWords.remove.length + data.myWords.keep.length;
+  // 고친 것이 있을 때만 보여 준다.
+  $("fixRow").hidden = fixed + worded === 0;
+  $("fixSub").textContent = `감정 ${fixed}개, 표현 ${worded}개`;
+  $("learnGroup").hidden = $("fixRow").hidden && $("shareRow").hidden;
   $("site").checked = siteOn;
   $("host").textContent = host;
   $("siteGroup").hidden = !host;
@@ -186,7 +197,11 @@ function render() {
 let saving = false;
 
 async function refresh() {
-  const [nextStatus, stored] = await Promise.all([ask({ type: "status" }), chrome.storage.local.get(STORAGE_KEYS)]);
+  const [nextStatus, stored] = await Promise.all([
+    ask({ type: "status" }),
+    chrome.storage.local.get([...STORAGE_KEYS, ...DATA_KEYS]),
+  ]);
+  data = normalizeData(stored);
   status = nextStatus;
   // 페이지에서 바뀐 설정(직접 지정한 댓글 위치 등)을 따라간다. 저장 중일 때는 방금 고른 값을 덮어쓰지 않는다.
   if (!saving) settings = normalize(stored);
@@ -216,6 +231,11 @@ async function main() {
     if (e.target.name === "level") save({ level: e.target.value });
   });
   $("showPill").addEventListener("change", (e) => save({ showPill: e.target.checked }));
+  $("shareFeedback").addEventListener("change", (e) => save({ shareFeedback: e.target.checked }));
+  $("resetFixes").addEventListener("click", async () => {
+    await chrome.storage.local.set({ myFixes: [], myWords: { remove: [], keep: [] } });
+    refresh();
+  });
   $("site").addEventListener("change", (e) => {
     const host = pageHost();
     if (!host) return;

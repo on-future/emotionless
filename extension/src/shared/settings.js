@@ -12,12 +12,32 @@ export const DEFAULTS = {
   level: "fold",
   showPill: true,
   pillCollapsed: false,
+  // 고친 내용을 개선에 보낼지. null: 아직 묻지 않음
+  shareFeedback: null,
   disabledHosts: [],
   selectors: {},
 };
 
 // chrome.storage 에서 읽어 올 키. "fold" 는 단계 설정이 생기기 전의 옛 설정이다.
 export const STORAGE_KEYS = [...Object.keys(DEFAULTS), "fold"];
+
+// 설정이 아닌 데이터: 내가 고친 판정(myFixes), 내가 알려 준 표현(myWords), 서버에서 받은 공유 묶음(shared)
+export const DATA_KEYS = ["myFixes", "myWords", "shared"];
+
+/** 저장된 데이터를 온전한 모양으로 만든다. */
+export function normalizeData(stored = {}) {
+  const list = (value) => (Array.isArray(value) ? value : []);
+  return {
+    myFixes: list(stored.myFixes),
+    myWords: { remove: list(stored.myWords?.remove), keep: list(stored.myWords?.keep) },
+    shared: {
+      version: stored.shared?.version ?? 0,
+      examples: list(stored.shared?.examples),
+      remove: list(stored.shared?.remove),
+      keep: list(stored.shared?.keep),
+    },
+  };
+}
 
 /**
  * 저장된 값을 온전한 설정으로 만든다. 빠진 값은 기본값으로 채우고,

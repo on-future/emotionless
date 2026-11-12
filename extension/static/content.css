@@ -193,3 +193,51 @@
 .eml-picker-banner[data-tone="none"] { background: #5c6676; }
 
 .eml-text a { color: inherit; text-decoration: underline; }
+
+/* ── 판정을 고치는 말풍선 ─────────────────────────────────────────────── */
+.eml-pop {
+  all: initial;
+  position: fixed;
+  z-index: 2147483647;
+  box-sizing: border-box;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.98);
+  color: #1b2330;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+  font: 500 13px/1.45 system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif;
+  animation: eml-pop-in 0.12s ease;
+}
+@keyframes eml-pop-in { from { opacity: 0; transform: translateY(4px) scale(0.97); } }
+.eml-pop * { box-sizing: border-box; font: inherit; color: inherit; }
+.eml-pop button { all: unset; box-sizing: border-box; cursor: pointer; font: inherit; }
+.eml-pop button:focus-visible { outline: 2px solid #2b5fd9; outline-offset: 1px; }
+
+.eml-pop-faces { display: flex; gap: 2px; padding: 6px; border-radius: 999px; }
+.eml-pop .eml-pop-face { display: flex; padding: 4px; border-radius: 50%; transition: transform 0.12s ease, background 0.12s ease; }
+.eml-pop-face img { display: block; width: 30px; height: 30px; }
+.eml-pop .eml-pop-face:hover { transform: scale(1.22) translateY(-2px); }
+.eml-pop .eml-pop-face[aria-selected="true"] { background: rgba(43, 95, 217, 0.16); }
+
+.eml-pop-menu { display: flex; gap: 2px; padding: 4px; border-radius: 12px; }
+.eml-pop .eml-pop-action { padding: 6px 12px; border-radius: 9px; font-weight: 600; white-space: nowrap; }
+.eml-pop .eml-pop-action:hover { background: rgba(0, 0, 0, 0.07); }
+
+.eml-pop-consent { display: block; width: 264px; padding: 14px; }
+.eml-pop-title { display: block; margin: 0 0 4px; font-weight: 700; font-size: 14px; }
+.eml-pop-text { display: block; margin: 0 0 12px; opacity: 0.75; }
+.eml-pop-buttons { display: flex; justify-content: flex-end; gap: 6px; }
+.eml-pop .eml-pop-primary { background: #2b5fd9; color: #fff; }
+.eml-pop .eml-pop-primary:hover { background: #244fb8; }
+
+@media (prefers-color-scheme: dark) {
+  .eml-pop { background: rgba(38, 41, 48, 0.98); color: #eef1f6; border-color: rgba(255, 255, 255, 0.14); }
+  .eml-pop .eml-pop-action:hover { background: rgba(255, 255, 255, 0.1); }
+  .eml-pop .eml-pop-primary:hover { background: #244fb8; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .eml-pop { animation: none; }
+  .eml-pop .eml-pop-face { transition: none; }
+}
+/* 얼굴을 누르면 감정을 고칠 수 있다. */
+.eml-msg > .eml-emoji { cursor: pointer; }

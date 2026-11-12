@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 import { strip, isUnchanged, hasProfanity, splitUrls } from "../src/shared/strip.js";
 import { classify, rankGroups } from "../src/shared/emotion.js";
 import { normalize, DEFAULTS } from "../src/shared/settings.js";
+import { learnedGroup, addFix, textKey, OWN_WEIGHT, SHARED_WEIGHT } from "../src/shared/learn.js";
+import { LABELS, toVector } from "../src/shared/emotion.js";
 
 test("strip: 욕설·ㅋㅋ·강조어를 지우고 사실은 남긴다", () => {
   assert.equal(
@@ -128,6 +130,53 @@ test("normalize: 빠진 설정은 기본값으로, 옛 접기 스위치는 단�
   assert.equal(normalize({ fold: false, level: "hide" }).level, "hide");
   assert.equal(normalize({ level: "엉뚱한 값" }).level, "fold");
   assert.equal(normalize({ enabled: false, showPill: false }).enabled, false);
+});
+
+test("strip: 사용자가 알려 준 표현을 더 지우거나 남긴다", () => {
+  assert.equal(strip("이 게임 갓겜임 인정", { remove: ["갓겜임"] }), "이 게임 인정.");
+  assert.equal(strip("진짜 사나이 재방송 언제 함?", { keep: ["진짜 사나이"] }), "진짜 사나이 재방송 언제 함?");
+  // 남기라는 표현이 지우라는 표현보다 우선한다
+  assert.equal(strip("대박 사건 발생", { remove: ["대박 사건"], keep: ["대박 사건"] }), "대박 사건 발생.");
+  // 정규식에서 특별한 뜻을 가진 글자가 있어도 글자 그대로 찾는다
+  assert.equal(strip("가격이 (실화냐) 3만원", { remove: ["(실화냐)"] }), "가격이 3만원.");
+});
+
+test("toVector: 라벨 순서대로 0~100 정수로 바꾼다", () => {
+  const vector = toVector({ "불평/불만": 0.987, "안심/신뢰": 0.5 });
+  assert.equal(vector.length, 44);
+  assert.equal(LABELS.length, 44);
+  assert.equal(vector[0], 99);
+  assert.equal(vector[43], 50);
+  assert.equal(vector[1], 0);
+});
+
+test("learnedGroup: 점수가 가까운 수정 사례의 감정을 따른다", () => {
+  const fixtures = JSON.parse(readFileSync(new URL("./fixtures/kote-scores.json", import.meta.url)));
+  const vec = (id) => toVector(fixtures.find((f) => f.id === id).scores);
+  // "배송 불만" 댓글을 불만으로 고쳐 두면, 점수가 비슷한 "음식 불만" 댓글도 불만으로 본다
+  const own = [{ v: vec("anger-delivery"), g: "complaint", w: OWN_WEIGHT }];
+  assert.equal(learnedGroup(vec("profanity-food"), own), "complaint");
+  // 성격이 다른 댓글에는 영향을 주지 않는다
+  assert.equal(learnedGroup(vec("positive-ramen"), own), null);
+  assert.equal(learnedGroup(vec("neutral-meeting"), own), null);
+  // 공유 묶음의 사례도 하나로 충분하다 (서버에서 이미 여러 사람의 의견이 모인 것)
+  const shared = [{ v: vec("anger-delivery"), g: "complaint", w: SHARED_WEIGHT }];
+  assert.equal(learnedGroup(vec("profanity-food"), shared), "complaint");
+  // 가까운 공유 사례끼리 의견이 갈리면 따르지 않는다
+  const split = [...shared, { v: vec("refund-request"), g: "anger", w: SHARED_WEIGHT }];
+  assert.equal(learnedGroup(vec("profanity-food"), split), null);
+  // 내가 고친 것과 공유 사례가 엇갈리면 내 것을 따른다
+  const mine = [...shared, { v: vec("refund-request"), g: "anger", w: OWN_WEIGHT }];
+  assert.equal(learnedGroup(vec("profanity-food"), mine), "anger");
+});
+
+test("addFix: 같은 글은 바꿔 넣고 오래된 것부터 버린다", () => {
+  let fixes = [];
+  fixes = addFix(fixes, { t: textKey("  같은   글 "), g: "anger" });
+  fixes = addFix(fixes, { t: textKey("같은 글"), g: "positive" });
+  assert.deepEqual(fixes, [{ t: "같은 글", g: "positive" }]);
+  for (let i = 0; i < 5; i++) fixes = addFix(fixes, { t: `글 ${i}`, g: "neutral" }, 3);
+  assert.deepEqual(fixes.map((f) => f.t), ["글 2", "글 3", "글 4"]);
 });
 
 test("classify: 점수가 전부 낮으면 중립", () => {

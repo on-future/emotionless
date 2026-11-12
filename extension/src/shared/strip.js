@@ -72,11 +72,26 @@ export function splitUrls(text) {
   return parts;
 }
 
-export function strip(text) {
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const phraseRegExp = (phrases) =>
+  phrases.length ? new RegExp(phrases.map(escapeRegExp).sort((a, b) => b.length - a.length).join("|"), "g") : null;
+
+/**
+ * @param {string} text
+ * @param {{remove?: string[], keep?: string[]}} [words] 사용자가 알려 준 표현.
+ *   remove: 더 지울 표현, keep: 지우지 말아야 할 표현 (keep 이 우선한다)
+ */
+export function strip(text, words = {}) {
   const urls = [];
+  const hold = (value) => `${HOLD}${urls.push(value) - 1}${HOLD}`;
   let s = splitUrls(text.replace(/\s+/g, " ").trim())
-    .map((part) => (part.url ? `${HOLD}${urls.push(part.text) - 1}${HOLD}` : part.text))
+    .map((part) => (part.url ? hold(part.text) : part.text))
     .join("");
+  // 남기라고 한 표현은 주소처럼 빼 두어 어떤 규칙에도 걸리지 않게 하고, 지우라고 한 표현은 먼저 지운다.
+  const keep = phraseRegExp(words.keep ?? []);
+  if (keep) s = s.replace(keep, (phrase) => hold(phrase));
+  const remove = phraseRegExp(words.remove ?? []);
+  if (remove) s = s.replace(remove, " ");
   // 글 중간의 ㅋㅋ·ㅠㅠ 는 문장 경계 역할을 하므로 마침표로 바꾼다.
   s = s.replace(RE_NOISE, MARK).replace(RE_MARK_BETWEEN, "$1. ").replaceAll(MARK, " ");
   s = s.replace(RE_PROFANITY, " ");

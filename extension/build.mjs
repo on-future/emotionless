@@ -15,7 +15,19 @@ await rm(OUT, { recursive: true, force: true });
 await mkdir(`${OUT}models/kote/onnx`, { recursive: true });
 await mkdir(`${OUT}ort`, { recursive: true });
 
-const common = { bundle: true, target: "chrome120", logLevel: "info", legalComments: "none" };
+// 피드백 서버 주소. config.json 에 적어 두고, 시험할 때는 환경 변수로 바꿔 넣는다.
+// 비어 있으면 서버와 통신하는 기능(수정 내용 보내기, 공유 묶음 받기)이 꺼진다.
+const config = JSON.parse(await readFile(new URL("./config.json", import.meta.url), "utf8"));
+const apiBase = (process.env.EMOTIONLESS_API ?? config.apiBase ?? "").replace(/\/+$/, "");
+console.log(`피드백 서버: ${apiBase || "(없음)"}`);
+
+const common = {
+  bundle: true,
+  target: "chrome120",
+  logLevel: "info",
+  legalComments: "none",
+  define: { __API_BASE__: JSON.stringify(apiBase) },
+};
 await Promise.all([
   build({ ...common, entryPoints: ["src/content/index.js"], outfile: `${OUT}content.js`, format: "iife" }),
   build({ ...common, entryPoints: ["src/popup.js"], outfile: `${OUT}popup.js`, format: "iife" }),
