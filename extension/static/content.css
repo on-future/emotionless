@@ -1,0 +1,109 @@
+/* emotionless 가 페이지에 넣는 요소의 스타일. 사이트 글꼴과 색을 그대로 따른다. */
+[data-eml-hidden] { display: none !important; }
+[data-eml-pending] { filter: blur(5px); transition: filter 0.15s; }
+[data-eml-pick] { outline: 2px solid #2456c8 !important; outline-offset: 2px; cursor: crosshair !important; }
+
+/* 순화본은 원문 요소와 같은 태그·클래스를 쓰므로 폭과 여백은 사이트 스타일을 따른다. */
+.eml-view { overflow-wrap: anywhere; }
+
+/* 감정별 색. 반투명이라 밝은 배경과 어두운 배경 모두에서 은은하게 보인다. */
+[data-eml-group="anger"] { --eml-rgb: 239, 68, 68; }
+[data-eml-group="blame"] { --eml-rgb: 168, 85, 247; }
+[data-eml-group="complaint"] { --eml-rgb: 249, 115, 22; }
+[data-eml-group="positive"] { --eml-rgb: 34, 197, 94; }
+[data-eml-group="sad"] { --eml-rgb: 59, 130, 246; }
+[data-eml-group="fear"] { --eml-rgb: 20, 184, 166; }
+[data-eml-group="surprise"] { --eml-rgb: 234, 179, 8; }
+[data-eml-group="neutral"] { --eml-rgb: 128, 128, 128; }
+.eml-view [hidden] { display: none !important; }
+.eml-row, .eml-view .eml-fold {
+  box-sizing: border-box;
+  max-width: 100%;
+  padding: 6px 12px 6px 8px;
+  border-radius: 14px;
+  background: rgba(var(--eml-rgb, 128, 128, 128), 0.12);
+}
+.eml-row { display: flex; align-items: center; gap: 0.6em; min-width: 0; }
+.eml-body { flex: 1 1 0; min-width: 0; }
+.eml-emoji {
+  flex: none;
+  display: block;
+  width: clamp(30px, 2.3em, 44px);
+  height: clamp(30px, 2.3em, 44px);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  object-fit: contain;
+  font-size: inherit;
+  user-select: none;
+  transition: transform 0.15s ease;
+}
+.eml-view:hover .eml-emoji { transform: scale(1.12) rotate(-4deg); }
+.eml-text { display: block; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+.eml-text.eml-empty { opacity: 0.6; }
+.eml-actions { display: flex; flex-wrap: wrap; gap: 0.75em; margin-top: 2px; }
+
+.eml-view button {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  font: inherit;
+  max-width: 100%;
+}
+.eml-view button:focus-visible { outline: 2px solid #2456c8; outline-offset: 2px; }
+.eml-view .eml-btn { font-size: 0.85em; color: #2456c8; padding: 2px 0; }
+.eml-view .eml-fold { display: flex; gap: 0.6em; align-items: center; min-width: 0; width: fit-content; }
+.eml-view .eml-fold[hidden] { display: none !important; }
+.eml-fold-label { min-width: 0; opacity: 0.7; }
+
+/* 화면 구석에 떠 있는 반응 요약. 페이지 흐름 밖이라 위치가 변하지 않는다. */
+.eml-pill {
+  all: initial;
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2147483646;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-width: calc(100vw - 32px);
+  padding: 8px 12px 7px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.96);
+  color: #1c1c1a;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
+  font: 600 13px/1 system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  user-select: none;
+}
+.eml-pill:hover { box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22); }
+.eml-pill:focus-visible { outline: 2px solid #2456c8; outline-offset: 2px; }
+.eml-pill-chips { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.eml-pill-bar { display: flex; gap: 2px; height: 4px; border-radius: 2px; overflow: hidden; }
+.eml-pill-collapsed { padding: 6px 10px; border-radius: 999px; }
+.eml-pill-collapsed .eml-pill-bar { display: none; }
+.eml-seg { flex-basis: 0; min-width: 3px; }
+.eml-seg[data-eml-group] { background: rgb(var(--eml-rgb)); }
+.eml-chip { display: inline-flex; align-items: center; gap: 4px; }
+.eml-emoji-sm { width: 20px; height: 20px; margin: 0; padding: 0; border: 0; object-fit: contain; }
+@media (prefers-color-scheme: dark) {
+  .eml-pill { background: rgba(38, 38, 40, 0.96); color: #f2f2f0; border-color: rgba(255, 255, 255, 0.14); }
+}
+@media print { .eml-pill { display: none; } }
+
+.eml-picker-banner {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2147483647;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: #1c1c1a;
+  color: #fff;
+  font: 14px/1.4 system-ui, sans-serif;
+  pointer-events: none;
+}

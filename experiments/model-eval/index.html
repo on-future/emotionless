@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>emotionless 모델 실험</title>
+    <style>
+      body { font: 14px/1.5 -apple-system, system-ui, sans-serif; margin: 24px; color: #1a1a1a; background: #fff; }
+      h1 { font-size: 18px; margin: 0 0 8px; }
+      #status { padding: 8px 12px; background: #f2f2f2; border-radius: 6px; margin: 12px 0; white-space: pre-wrap; }
+      table { border-collapse: collapse; width: 100%; margin: 12px 0 28px; }
+      th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; vertical-align: top; }
+      th { background: #fafafa; }
+      td.ms { white-space: nowrap; text-align: right; }
+      button { font: inherit; padding: 6px 14px; }
+    </style>
+  </head>
+  <body>
+    <h1>emotionless 모델 실험</h1>
+    <div>
+      <button id="run">실행</button>
+      <span id="models"></span>
+    </div>
+    <div id="status">대기 중</div>
+    <div id="out"></div>
+
+    <script type="module">
+      import { CreateMLCEngine } from "/node_modules/@mlc-ai/web-llm/lib/index.js";
+      import { MODELS, PROMPT_VERSION, SYSTEM_PROMPT, FEW_SHOT, SAMPLES } from "/samples.js";
+
+      const params = new URLSearchParams(location.search);
+      const wanted = params.get("models") ? params.get("models").split(",") : null;
+      const models = wanted ? MODELS.filter((m) => wanted.includes(m.id)) : MODELS;
+      const statusEl = document.getElementById("status");
+      const outEl = document.getElementById("out");
+      document.getElementById("models").textContent = models.map((m) => m.id).join(", ");
+
+      const post = (path, body) =>
+        fetch(path, { method: "POST", body: JSON.stringify(body) }).catch(() => {});
+
+      let lastStatusPost = 0;
+      function setStatus(text, force = false) {
+        statusEl.textContent = text;
+        const now = Date.now();
+        if (force || now - lastStatusPost > 2000) {
+          lastStatusPost = now;
+          post("/status", { at: new Date().toISOString(), text });
+        }
+      }
+
+      function addTable(model) {
+        const h = document.createElement("h2");
+        h.textContent = model;
+        h.style.fontSize = "15px";
+        const table = document.createElement("table");
+        table.innerHTML = "<tr><th>분류</th><th>원문</th><th>변환</th><th>ms</th></tr>";
+        outEl.append(h, table);
+        return table;
+      }
+
+      function addRow(table, sample, output, ms) {
+        const tr = document.createElement("tr");
+        for (const [text, cls] of [[sample.kind], [sample.text], [output], [String(ms), "ms"]]) {
+          const td = document.createElement("td");
+          td.textContent = text;
+          if (cls) td.className = cls;
+          tr.append(td);
+        }
+        table.append(tr);
+      }
+
+      // 사고 블록과 첫 문단 뒤에 붙는 설명을 잘라낸다.
+      const clean = (s) =>
+        s.replace(/<think>[\s\S]*?<\/think>/g, "").replace(/<\/?think>/g, "").trim().split(/\n\s*\n/)[0].trim();
+
+      async function runModel({ id: model, thinkingOff }) {
+        const table = addTable(model);
+        const t0 = performance.now();
+        const engine = await CreateMLCEngine(model, {
+          initProgressCallback: (p) => setStatus(`[${model}] 로딩: ${p.text}`),
+        });
+        const loadMs = Math.round(performance.now() - t0);
+        await post("/result", { type: "load", model, loadMs });
+
+        for (const sample of SAMPLES) {
+          setStatus(`[${model}] 변환 중: ${sample.id}`, true);
+          const t1 = performance.now();
+          const reply = await engine.chat.completions.create({
+            messages: [
+              { role: "system", content: SYSTEM_PROMPT },
+              ...FEW_SHOT,
+              { role: "user", content: sample.text },
+            ],
+            temperature: 0,
+            max_tokens: 256,
+            stop: ["\n\n"],
+            ...(thinkingOff ? { extra_body: { enable_thinking: false } } : {}),
+          });
+          const ms = Math.round(performance.now() - t1);
+          const raw = reply.choices[0].message.content ?? "";
+          const output = clean(raw);
+          addRow(table, sample, output, ms);
+          await post("/result", {
+            type: "sample",
+            prompt: PROMPT_VERSION,
+            model,
+            id: sample.id,
+            kind: sample.kind,
+            input: sample.text,
+            output,
+            raw: raw === output ? undefined : raw,
+            ms,
+            usage: reply.usage,
+          });
+          await engine.resetChat();
+        }
+        await engine.unload();
+      }
+
+      async function runAll() {
+        if (!navigator.gpu) {
+          setStatus("오류: 이 브라우저는 WebGPU를 지원하지 않습니다.", true);
+          await post("/result", { type: "fatal", error: "no WebGPU", ua: navigator.userAgent });
+          return;
+        }
+        await post("/result", { type: "start", prompt: PROMPT_VERSION, models: models.map((m) => m.id), ua: navigator.userAgent, at: new Date().toISOString() });
+        for (const entry of models) {
+          const model = entry.id;
+          try {
+            await runModel(entry);
+          } catch (err) {
+            const error = String(err?.stack || err);
+            setStatus(`[${model}] 오류: ${error}`, true);
+            await post("/result", { type: "error", model, error });
+          }
+        }
+        setStatus("완료", true);
+        await post("/result", { type: "done", at: new Date().toISOString() });
+      }
+
+      document.getElementById("run").addEventListener("click", runAll);
+      if (params.has("auto")) runAll();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,8 @@
+{
+  "name": "emotionless-classify-eval",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@huggingface/transformers": "^3.0.0"
+  }
+}

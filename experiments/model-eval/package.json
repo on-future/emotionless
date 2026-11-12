@@ -1,0 +1,11 @@
+{
+  "name": "emotionless-model-eval",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "@mlc-ai/web-llm": "0.2.88"
+  }
+}

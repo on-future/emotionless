@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>emotionless</title>
+    <style>
+      body { margin: 0; width: 260px; padding: 14px; font: 14px/1.5 system-ui, sans-serif; color: #1c1c1a; background: #fff; }
+      h1 { margin: 0 0 10px; font-size: 15px; }
+      label { display: flex; align-items: center; gap: 8px; min-height: 32px; cursor: pointer; }
+      .host { color: #5f5f5a; font-size: 12px; margin: 8px 0 2px; overflow-wrap: anywhere; }
+      button { font: inherit; margin-top: 8px; width: 100%; min-height: 34px; border: 1px solid #c9c9c4; border-radius: 6px; background: #f7f7f5; cursor: pointer; }
+      button:disabled { opacity: 0.5; cursor: default; }
+      .note { color: #5f5f5a; font-size: 12px; margin-top: 10px; }
+    </style>
+  </head>
+  <body>
+    <h1>emotionless</h1>
+    <label><input type="checkbox" id="enabled" /> 모든 사이트에서 사용</label>
+    <label><input type="checkbox" id="fold" /> 분노·비난 댓글 접기</label>
+    <div class="host" id="host"></div>
+    <label><input type="checkbox" id="site" /> 이 사이트에서 사용</label>
+    <button id="pick" type="button">댓글 직접 지정</button>
+    <button id="reset" type="button">이 사이트 지정 초기화</button>
+    <div class="note">설정을 바꾸면 현재 탭을 새로 고칩니다.</div>
+    <script src="popup.js"></script>
+  </body>
+</html>
