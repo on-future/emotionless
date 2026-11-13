@@ -21,6 +21,51 @@
     <dl class="cmt_item"><dt><span class="nameui">ll20****</span> <span class="date">11.13 11:11</span></dt>
       <dd class="usertxt" data-expect="body">ㅋㅋ</dd></dl>
   </div>
+  <ul class="replyAlign"><li class="cleanNum">클린지수 블라인드 <a href="#">?</a></li><li><a href="#">최신순</a></li><li><a href="#">공감순</a></li></ul>
+</section>
+
+<section id="blocked">
+  <h2>차단된 댓글에 본문 칸이 둘인 경우 (숨긴 원문 + 안내문)</h2>
+  <div class="cmt_best">
+    <dl class="cmt_item"><dt><span class="nameui">dbwl****</span> <span class="date">11.13 09:27</span></dt>
+      <dd class="usertxt" data-expect="body">개코 전부인 같네 이러고 싶어서 어떻게 참았대</dd></dl>
+    <dl class="cmt_item"><dt><span class="nameui">sing****</span> <span class="date">11.13 09:28</span></dt>
+      <dd class="usertxt" data-expect="body">평생 주인공이었다면서 왜 숨겼냐</dd></dl>
+  </div>
+  <div class="cmt_list">
+    <dl class="cmt_item"><dt><span class="nameui">hong****</span> <span class="date">11.13 12:34</span></dt>
+      <dd class="usertxt isShowing" style="display:none;">사이트가 숨겨 둔 원문입니다 보이면 안 됩니다</dd>
+      <dd class="usertxt isHide" data-expect="skip">차단 시스템이 부적절한 내용을 감지하여 자동 숨김 처리한 댓글입니다.</dd></dl>
+    <dl class="cmt_item"><dt><span class="nameui">ramo****</span> <span class="date">11.13 12:26</span></dt>
+      <dd class="usertxt" data-expect="body">이마광이구만</dd></dl>
+    <dl class="cmt_item"><dt><span class="nameui">lill****</span> <span class="date">11.13 16:01</span></dt>
+      <dd class="usertxt" data-expect="body">뭔 ㅋㅋㅋㅋ</dd></dl>
+  </div>
+</section>
+
+<section id="prefixed">
+  <h2>접두어 붙은 모양 클래스 (쇼핑몰 상품 정보 + 리뷰)</h2>
+  <div class="product-info twc-relative twc-w-full">
+    <div class="twc-flex twc-items-center"><span class="twc-text-[14px]">한 달간 8,000명 이상 구매했어요</span></div>
+    <div class="twc-flex twc-items-center"><span class="twc-font-bold">8,910원</span><span>(1개당 223원)</span></div>
+    <div class="twc-flex twc-items-center"><span>무료배송</span></div>
+    <div class="twc-flex twc-items-center"><span>내일(토) 11/14 도착 보장</span></div>
+    <div class="twc-flex twc-items-center"><span>최대 89원 쿠팡캐시 적립</span></div>
+  </div>
+  <div class="sdp-review twc-relative twc-w-full">
+    <div class="twc-flex twc-flex-col">
+      <div class="twc-flex twc-items-center twc-gap-[12px]"><div class="twc-font-bold">지속력</div><div class="twc-flex-[1_1_0]">오래 유지돼요</div><div>74%</div></div>
+      <div class="twc-flex twc-items-center twc-gap-[12px]"><div class="twc-font-bold">온열 기능</div><div class="twc-flex-[1_1_0]">후끈후끈해요</div><div>50%</div></div>
+    </div>
+    <div>
+      <article class="twc-pt-[16px] twc-border-b-[1px]"><div class="twc-flex twc-flex-col"><span class="twc-font-bold">김*곤</span><div class="twc-text-[14px]">2026.11.07</div><div class="twc-text-[14px]">판매자: 쿠팡(주)</div></div>
+        <div class="twc-text-[14px] twc-break-all"><span class="twc-bg-white" data-expect="body">날씨가 쌀쌀해지면서 아이 등원길이 걱정이었어요.<br>손을 주머니에 넣고 다니게 해요.</span></div></article>
+      <article class="twc-pt-[16px] twc-border-b-[1px]"><div class="twc-flex twc-flex-col"><span class="twc-font-bold">전*찬</span><div class="twc-text-[14px]">2026.11.07</div><div class="twc-text-[14px]">판매자: 쿠팡(주)</div></div>
+        <div class="twc-text-[14px] twc-break-all"><span class="twc-bg-white" data-expect="body">재구매했어요. 벌써 두 번째예요.</span></div></article>
+      <article class="twc-pt-[16px] twc-border-b-[1px]"><div class="twc-flex twc-flex-col"><span class="twc-font-bold">오늘도득템</span><div class="twc-text-[14px]">2026.11.09</div><div class="twc-text-[14px]">판매자: 쿠팡(주)</div></div>
+        <div class="twc-text-[14px] twc-break-all"><span class="twc-bg-white" data-expect="body">좋아요</span></div></article>
+    </div>
+  </div>
 </section>
 
 <section id="utility">

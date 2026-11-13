@@ -60,8 +60,48 @@ const MAX_TEXT = 3000;
 const MIN_COVERAGE = 0.25;
 // 본문 자리라면 댓글 하나에 평균 이만큼은 글자가 있다 (닉네임만 있는 자리를 본문으로 고르지 않게).
 const MIN_AVG_LETTERS = 3;
+// 목록 위로 이만큼 올라가며 "댓글·리뷰" 같은 이름을 찾는다.
+const HINT_DEPTH = 6;
+
+// Tailwind 를 접두어와 함께 쓰는 사이트(쿠팡 "twc-flex" 등)의 접두어. 페이지마다 findComments 에서 정한다.
+let utilityPrefix = null;
+let prefixCheckedAt = -Infinity;
+const UTILITY_PROBE = /^([a-z][a-z0-9]{0,5})-(flex|grid|block|inline-flex|hidden|relative|absolute|items-center|justify-between|w-full|h-full)$/;
+
+/** 페이지에서 "접두어-flex", "접두어-items-center" 같은 클래스가 여러 번 쓰였으면 그 접두어를 모양용 접두어로 본다. */
+function findUtilityPrefix() {
+  const counts = new Map();
+  let scanned = 0;
+  for (const el of document.body.querySelectorAll("[class]")) {
+    if (++scanned > 4000) break;
+    for (const cls of classTokens(el)) {
+      const m = UTILITY_PROBE.exec(cls);
+      if (!m) continue;
+      const entry = counts.get(m[1]) ?? { n: 0, kinds: new Set() };
+      entry.n++;
+      entry.kinds.add(m[2]);
+      counts.set(m[1], entry);
+    }
+  }
+  const prefixes = [...counts].filter(([, e]) => e.n >= 10 && e.kinds.size >= 3).map(([p]) => p);
+  return prefixes.length ? new RegExp(`^(?:${prefixes.join("|")})-`) : null;
+}
+
+// 접두어는 한 페이지에서 바뀌지 않으므로 찾으면 계속 쓰고, 못 찾았으면 글이 더 불러와진 뒤에 다시 본다.
+function refreshUtilityPrefix() {
+  if (utilityPrefix || performance.now() - prefixCheckedAt < 5000) return;
+  prefixCheckedAt = performance.now();
+  utilityPrefix = findUtilityPrefix();
+}
+
+/** 글자 크기·색·배치처럼 모양만 정하는 클래스인지. */
+const isUtility = (cls) => UTILITY_CLASS.test(cls) || (!!utilityPrefix && utilityPrefix.test(cls) && UTILITY_CLASS.test(cls.replace(utilityPrefix, "")));
 
 const classTokens = (el) => (typeof el.className === "string" ? el.className.split(/\s+/).filter(Boolean) : []);
+// 이름으로 쓸 만한 클래스 (모양용 클래스·자동 생성된 번호 클래스를 뺀 것)
+const nameTokens = (el) => classTokens(el).filter((cls) => !isUtility(cls) && !/\d{3,}/.test(cls));
+// 같은 모양의 항목을 묶을 때 쓰는 클래스: 모양용이 아닌 첫 클래스 (자동 생성된 클래스도 페이지 안에서는 같은 모양을 뜻한다)
+const shapeClass = (el) => classTokens(el).find((cls) => !isUtility(cls)) ?? "";
 
 const hintOf = (el) =>
   HINT.test(el.tagName) ||
@@ -70,7 +110,7 @@ const hintOf = (el) =>
   HINT.test(el.getAttribute("aria-label") || "");
 
 function hintedNearby(el) {
-  for (let cur = el, depth = 0; cur && cur !== document.documentElement && depth < 4; cur = cur.parentElement, depth++) {
+  for (let cur = el, depth = 0; cur && cur !== document.documentElement && depth < HINT_DEPTH; cur = cur.parentElement, depth++) {
     if (hintOf(cur)) return true;
   }
   return false;
@@ -79,26 +119,35 @@ function hintedNearby(el) {
 /** 이름(클래스·id)으로 본문임이 드러나는지. 모양만 정하는 클래스는 보지 않는다. */
 function isTextNamed(el) {
   if (TEXT_HINT.test(el.id || "")) return true;
-  return classTokens(el).some((cls) => !UTILITY_CLASS.test(cls) && TEXT_HINT.test(cls));
+  return classTokens(el).some((cls) => !isUtility(cls) && TEXT_HINT.test(cls));
 }
 
 /** 이름으로 본문이 아닌 칸(작성자·날짜·버튼 등)임이 드러나는지. */
 function isNotTextNamed(el) {
   if (isTextNamed(el)) return false;
-  const names = [...classTokens(el).filter((cls) => !UTILITY_CLASS.test(cls)), el.id || ""];
+  const names = [...classTokens(el).filter((cls) => !isUtility(cls)), el.id || ""];
   // "comment-head", "date_time", "userName" 을 낱말로 쪼갠다.
   return names.some((name) =>
     name.split(/[^A-Za-z0-9]+|(?<=[a-z])(?=[A-Z])/).some((token) => NOT_TEXT_TOKENS.has(token.toLowerCase())),
   );
 }
 
-const keyOf = (el) => `${el.tagName}|${el.classList[0] ?? ""}`;
+// 모양용 클래스만 있는 항목(Tailwind)은 클래스 전체가 같아야 같은 모양이다. 한 부품으로 그린 목록은 클래스가 똑같고,
+// 옆에 놓인 다른 칸들은 클래스가 서로 다르다.
+// 끝 번호만 다른 클래스("best01", "best02")는 같은 부품의 순번이므로 같은 모양으로 본다.
+const keyOf = (el) => {
+  const cls = shapeClass(el).replace(/[-_]?\d+$/, "");
+  if (cls) return `${el.tagName}|${cls}`;
+  const all = classTokens(el).sort().join(" ");
+  return all ? `${el.tagName}|~${all}` : `${el.tagName}|`;
+};
 
 // 항목 안에서의 자리: 항목부터 그 요소까지 태그와 첫 클래스를 이은 경로.
 function pathFrom(item, el) {
   const parts = [];
   for (let cur = el; cur && cur !== item; cur = cur.parentElement) {
-    const cls = classTokens(cur).find((c) => !UTILITY_CLASS.test(c) && !/\d{3,}/.test(c)) ?? "";
+    // 이름 있는 클래스가 없으면 모양 클래스 전체로 자리를 구별한다 (Tailwind 에서 닉네임 칸과 본문 칸이 같은 자리로 보이지 않게).
+    const cls = nameTokens(cur)[0] ?? (classTokens(cur).length ? `~${classTokens(cur).sort().join(" ")}` : "");
     parts.push(`${cur.tagName}.${cls}`);
   }
   return parts.reverse().join(">");
@@ -120,6 +169,8 @@ function pieces(item, itemSet) {
   const walker = document.createTreeWalker(item, NodeFilter.SHOW_ELEMENT, {
     acceptNode(el) {
       if (el !== item && itemSet.has(el)) return NodeFilter.FILTER_REJECT;
+      // 사이트가 숨겨 둔 칸(차단된 원문, 접힌 메뉴)은 읽지 않는다.
+      if (el !== item && el.style?.display === "none") return NodeFilter.FILTER_REJECT;
       if (el.matches(NOT_TEXT_ANCESTOR)) return NodeFilter.FILTER_REJECT;
       return NodeFilter.FILTER_ACCEPT;
     },
@@ -261,6 +312,13 @@ const listId = (el) => {
   return listIds.get(el);
 };
 
+/** 요소들을 모두 품는 가장 안쪽 조상. */
+function commonAncestor(els) {
+  let anc = els[0]?.parentElement ?? null;
+  while (anc && !els.every((el) => anc.contains(el))) anc = anc.parentElement;
+  return anc;
+}
+
 /** 반복되는 댓글 목록을 찾아, 같은 모양(태그·클래스)의 항목끼리 묶어 돌려준다. */
 function findGroupsAuto() {
   const groups = new Map();
@@ -280,7 +338,7 @@ function findGroupsAuto() {
     for (const [shape, members] of siblings) {
       if (members.length < 2) continue;
       // 클래스가 없는 항목(li 등)은 모양만으로는 다른 목록과 구별되지 않으므로 목록마다 따로 묶는다.
-      const key = members[0].classList[0] ? shape : `${shape}@${listId(parent)}`;
+      const key = shapeClass(members[0]) ? shape : `${shape}@${listId(parent)}`;
       // 대부분 글이 들어 있는 반복 블록이어야 댓글 목록으로 본다. 그중 한글이 있는 것만 처리 대상이다
       // (영어 댓글이 섞여 있거나 일부가 비어 있어도 목록 전체를 버리지 않는다).
       const filled = members.filter((m) => m.textContent.trim());
@@ -293,16 +351,62 @@ function findGroupsAuto() {
     }
   }
   // 답글이 하나뿐인 목록처럼 반복되지 않아 놓친 같은 모양의 항목도 같은 묶음에 넣는다.
+  // 단, 그 목록이 차지한 영역 안에서만 찾는다 (같은 클래스를 쓰는 상품 정보·메뉴까지 끌어오지 않게).
   for (const [key, members] of groups) {
     const first = members.values().next().value;
-    if (!first.classList[0]) continue;
-    const selector = `${first.tagName.toLowerCase()}.${CSS.escape(first.classList[0])}`;
-    for (const el of document.body.querySelectorAll(selector)) {
+    const cls = shapeClass(first);
+    if (!cls) continue;
+    const region = commonAncestor([...members]);
+    if (!region || region === document.body || region === document.documentElement) continue;
+    const selector = `${first.tagName.toLowerCase()}.${CSS.escape(cls)}`;
+    for (const el of region.querySelectorAll(selector)) {
       if (!members.has(el) && !el.matches(OURS) && !el.closest(".eml-view, .eml-pill") && HANGUL.test(el.textContent)) members.add(el);
     }
     groups.set(key, members);
   }
   return [...groups.values()].map((set) => [...set]);
+}
+
+/**
+ * 다른 목록의 항목 안에 하나씩 들어 있는 "부품"을 목록으로 잘못 본 묶음을 버린다.
+ * 예: 네이트는 차단된 댓글에 본문 칸이 둘(숨긴 원문, 안내문)이라 본문 칸끼리 반복 목록처럼 보인다.
+ * 이런 묶음은 바깥 댓글 항목 안에 들어 있고, 항목마다 본문 글 한 조각만 담고 있다.
+ * 답글처럼 닉네임·시각을 따로 가진 안쪽 항목은 그 자체가 댓글이므로 남는다.
+ */
+function dropPartGroups(groups) {
+  const owner = new Map();
+  groups.forEach((group, index) => group.forEach((el) => owner.set(el, index)));
+  return groups.filter((group, index) => {
+    const outers = new Map();
+    let outerGroup = null;
+    for (const el of group) {
+      let outer = el.parentElement;
+      while (outer && !(owner.has(outer) && owner.get(outer) !== index)) outer = outer.parentElement;
+      if (!outer) continue;
+      if (outerGroup !== null && owner.get(outer) !== outerGroup) return true;
+      outerGroup = owner.get(outer);
+      outers.set(outer, (outers.get(outer) ?? 0) + 1);
+    }
+    if (outerGroup === null) return true;
+    const inside = [...outers.values()].reduce((a, b) => a + b, 0);
+    if (inside < group.length * 0.9) return true;
+    // 댓글 항목이라면 본문 말고도 닉네임·시각 같은 글이 함께 있다. 글 조각이 하나뿐인 칸은 본문 칸(부품)이다.
+    const bare = group.filter((el) => pieces(el, new Set()).length <= 1).length;
+    return bare < group.length * 0.8;
+  });
+}
+
+// 글이 있는 항목이 두 개뿐인 묶음은 반복만으로는 댓글 목록이라는 증거가 약하다 (리뷰 요약표, 안내 상자 등).
+// 이런 묶음은 본문 밖에 작성 시각이 붙어 있거나, 항목 이름이 댓글·리뷰이고 두 항목의 본문 자리가 같을 때만 댓글로 본다.
+const SMALL_GROUP = 2;
+function looksLikeComments(items, textEls) {
+  const found = items.map((item, i) => [item, textEls[i]]).filter(([, textEl]) => textEl);
+  // 목록이라면 글이 있는 항목이 둘 이상이다 (메뉴·도구 줄은 글이 있는 칸이 하나뿐인 경우가 많다).
+  if (found.length < 2) return false;
+  if (found.length > SMALL_GROUP) return true;
+  if (found.some(([item, textEl]) => DATE_LIKE.test((item.textContent ?? "").replace(textEl.textContent ?? "", " ")))) return true;
+  const paths = new Set(found.map(([item, textEl]) => pathFrom(item, textEl)));
+  return paths.size === 1 && found.every(([item]) => hintOf(item));
 }
 
 /** 사이트가 띄운 안내문인지 (삭제·숨김·차단된 댓글 자리). */
@@ -323,6 +427,7 @@ export function siteTextSelectors() {
  * @returns {{item: Element, textEl: Element}[]}
  */
 export function findComments(customSelector) {
+  refreshUtilityPrefix();
   let groups = [];
   if (customSelector) {
     try {
@@ -345,11 +450,13 @@ export function findComments(customSelector) {
     groups = findGroupsAuto();
   }
 
+  if (!customSelector) groups = dropPartGroups(groups);
   const itemSet = new Set(groups.flat());
   const seen = new Set();
   const out = [];
   for (const items of groups) {
     const textEls = chooseTextEls(items, itemSet);
+    if (!customSelector && !looksLikeComments(items, textEls)) continue;
     items.forEach((item, index) => {
       const textEl = textEls[index];
       if (!textEl || seen.has(textEl) || textEl.closest(OURS) || textEl.closest(NOT_TEXT_CONTAINER)) return;
@@ -363,6 +470,7 @@ export function findComments(customSelector) {
 
 // 사용자가 클릭한 요소에서 댓글 항목 선택자를 추정한다.
 export function selectorFromClick(target) {
+  refreshUtilityPrefix();
   let best = null;
   let bestCount = 1;
   for (let el = target; el && el !== document.body; el = el.parentElement) {
@@ -375,6 +483,6 @@ export function selectorFromClick(target) {
     }
   }
   if (!best) return null;
-  const part = (el) => el.tagName.toLowerCase() + (el.classList[0] ? `.${CSS.escape(el.classList[0])}` : "");
+  const part = (el) => el.tagName.toLowerCase() + (shapeClass(el) ? `.${CSS.escape(shapeClass(el))}` : "");
   return `${part(best.parentElement)} > ${part(best)}`;
 }
