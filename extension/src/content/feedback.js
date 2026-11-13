@@ -109,16 +109,69 @@ export function openWordMenu({ x, y, actions, onPick }) {
 }
 
 /**
- * 처음 고쳤을 때 한 번, 고친 내용을 개선에 보낸다는 것을 알리고 끌 수 있게 한다.
- * @param {{x: number, y: number, onClose: (keepSharing: boolean) => void}} options
- *   onClose: "보내지 않기"를 고르면 false, 확인하거나 그냥 닫으면 true
+ * 고른 표현을 바꿀 말을 적는다. 규칙에 맞는 순한 말이 있으면 미리 채워 둔다.
+ * @param {{x: number, y: number, phrase: string, suggestion: string, onSubmit: (to: string) => void}} options
+ */
+export function openReplaceInput({ x, y, phrase, suggestion, onSubmit }) {
+  const node = el("form", "eml-pop-replace");
+  node.setAttribute("role", "dialog");
+  node.setAttribute("aria-label", "바꿀 말 적기");
+  const from = el("p", "eml-pop-text");
+  from.append("‘", el("strong", null, phrase), "’ 을(를)");
+  const input = el("input", "eml-pop-input");
+  input.type = "text";
+  input.maxLength = 40;
+  input.value = suggestion || "";
+  input.placeholder = "바꿀 말 (비우면 지워요)";
+  input.setAttribute("aria-label", "바꿀 말");
+  const buttons = el("div", "eml-pop-buttons");
+  const cancel = el("button", "eml-pop-action", "취소");
+  cancel.type = "button";
+  const apply = el("button", "eml-pop-action eml-pop-primary", "바꾸기");
+  apply.type = "submit";
+  buttons.append(cancel, apply);
+  node.append(from, input, buttons);
+  // 이 입력은 사람이 직접 하는 것만 받는다 (페이지 스크립트가 대신 제출하는 것은 무시).
+  let typedByPerson = false;
+  input.addEventListener("keydown", (event) => {
+    if (event.isTrusted) typedByPerson = true;
+  });
+  apply.addEventListener("click", (event) => {
+    if (event.isTrusted) typedByPerson = true;
+  });
+  cancel.addEventListener("click", (event) => {
+    event.preventDefault();
+    if (event.isTrusted) closePopover();
+  });
+  node.addEventListener("submit", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!typedByPerson) return;
+    const to = input.value.replace(/\s+/g, " ").trim().slice(0, 40);
+    closePopover();
+    onSubmit(to);
+  });
+  for (const type of ["keydown", "keyup", "keypress", "input"]) node.addEventListener(type, (event) => event.stopPropagation());
+  show(node, x, y);
+  input.focus();
+  input.select();
+}
+
+/**
+ * 처음 고쳤을 때 한 번, 고친 내용을 개선에 보낸다는 것을 알리고 고를 수 있게 한다.
+ * @param {{x: number, y: number, onClose: (keepSharing: boolean | null) => void}} options
+ *   onClose: "보내기"를 고르면 true, "보내지 않기"를 고르면 false, 답하지 않고 닫으면 null
  */
 export function openShareNotice({ x, y, onClose }) {
   const node = el("div", "eml-pop-consent");
   node.setAttribute("role", "dialog");
   node.append(
-    el("p", "eml-pop-title", "고친 내용은 개선에 쓰여요"),
-    el("p", "eml-pop-text", "고친 댓글의 글과 고른 내용만 보내, 모두의 판정을 더 정확하게 만드는 데 써요. 설정에서 언제든 끌 수 있어요."),
+    el("p", "eml-pop-title", "고친 내용을 보내 개선에 쓸까요?"),
+    el(
+      "p",
+      "eml-pop-text",
+      "보내면 고친 댓글의 글과 고친 내용만 Emotionless 서버로 가, 판정 모델을 다시 학습하는 데 쓰여요. 품질 확인을 위해 운영자가 볼 수 있어요. 계정·방문 기록은 보내지 않고, 설정에서 언제든 바꿀 수 있어요.",
+    ),
   );
   let answered = false;
   const answer = (keepSharing) => {
@@ -129,7 +182,7 @@ export function openShareNotice({ x, y, onClose }) {
   const buttons = el("div", "eml-pop-buttons");
   for (const [label, value, primary] of [
     ["보내지 않기", false, false],
-    ["확인", true, true],
+    ["보내기", true, true],
   ]) {
     const button = el("button", `eml-pop-action${primary ? " eml-pop-primary" : ""}`, label);
     button.type = "button";
@@ -143,6 +196,6 @@ export function openShareNotice({ x, y, onClose }) {
     buttons.append(button);
   }
   node.append(buttons);
-  // 바깥을 눌러 닫은 경우도 안내를 본 것으로 친다.
-  show(node, x, y, () => answer(true));
+  // 답하지 않고 닫은 것은 동의가 아니다. 보내지 않고 다음에 다시 묻는다.
+  show(node, x, y, () => answer(null));
 }

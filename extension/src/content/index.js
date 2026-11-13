@@ -13,7 +13,8 @@ import {
   fixInPlace,
 } from "./render.js";
 import { startPicker, stopPicker } from "./picker.js";
-import { openEmotionPicker, openWordMenu, openShareNotice, closePopover } from "./feedback.js";
+import { openEmotionPicker, openWordMenu, openReplaceInput, openShareNotice, closePopover } from "./feedback.js";
+import { suggestSoftening } from "../shared/soften.js";
 import { GROUPS } from "../shared/emotion.js";
 import { isUnchanged, hasProfanity } from "../shared/strip.js";
 import { cleanText } from "../shared/clean.js";
@@ -57,7 +58,7 @@ const groupCache = new Map();
 let data = normalizeData();
 let fixByKey = new Map();
 let examples = [];
-let words = { remove: [], keep: [] };
+let words = { remove: [], keep: [], replace: [] };
 
 function rebuildLearned() {
   fixByKey = new Map(data.myFixes.map((fix) => [fix.t, fix.g]));
@@ -67,9 +68,12 @@ function rebuildLearned() {
   ];
   // 내가 정한 것이 공유 묶음보다 우선한다.
   const mine = data.myWords;
+  const minePhrases = new Set([...mine.remove, ...mine.keep, ...mine.replace.map(([p]) => p)]);
   words = {
-    remove: [...new Set([...mine.remove, ...data.shared.remove.filter((p) => !mine.keep.includes(p))])],
-    keep: [...new Set([...mine.keep, ...data.shared.keep.filter((p) => !mine.remove.includes(p))])],
+    remove: [...new Set([...mine.remove, ...data.shared.remove.filter((p) => !minePhrases.has(p))])],
+    keep: [...new Set([...mine.keep, ...data.shared.keep.filter((p) => !minePhrases.has(p))])],
+    // 공유 묶음을 먼저, 내 것을 뒤에 둔다 (뒤의 것이 이긴다).
+    replace: [...data.shared.replace.filter(([p]) => !minePhrases.has(p)), ...mine.replace],
   };
 }
 
@@ -333,7 +337,7 @@ async function pump() {
         }
         // "표시만" 단계에서는 글을 건드리지 않는다.
         // 모델이 고른 지울 부분으로 순화한다. 사용자가 알려 준 표현과 늘 지우는 것(욕설 등)도 함께 반영한다.
-        const cleaned = level === "label" ? entry.original : cleanText(entry.original, groups[index].del ?? [], words);
+        const cleaned = level === "label" ? entry.original : cleanText(entry.original, groups[index].del ?? [], words, groups[index].rep ?? []);
         entry.cleaned = cleaned;
         const data = {
           group: entry.group,
@@ -481,6 +485,8 @@ function share(payload, anchor) {
     x: anchor.x,
     y: anchor.y,
     onClose: (keepSharing) => {
+      // 답하지 않고 닫았으면 이번 것은 보내지 않고, 다음에 고칠 때 다시 묻는다.
+      if (keepSharing == null) return;
       settings.shareNoticeSeen = true;
       settings.shareFeedback = keepSharing;
       chrome.storage.local.set({ shareNoticeSeen: true, shareFeedback: keepSharing }).then(() => keepSharing && send());
@@ -500,17 +506,27 @@ function fixEmotion(textEl, group, anchor) {
   share({ kind: "emotion", text: key, predicted, corrected: group, scores: entry.v }, anchor);
 }
 
-function fixWord(textEl, kind, phrase, anchor) {
+/**
+ * 표현 하나를 어떻게 할지 정한다. 같은 표현에 대해 앞서 정한 것은 지운다.
+ * @param {"remove" | "keep" | "replace"} kind
+ * @param {string} [replacement] kind 가 replace 일 때 바꿀 말
+ */
+function fixWord(textEl, kind, phrase, anchor, replacement = "") {
   const entry = tracked.get(textEl);
   if (!entry) return;
-  const other = kind === "remove" ? "keep" : "remove";
+  const mine = data.myWords;
   const myWords = {
-    [kind]: [...new Set([...data.myWords[kind], phrase])],
-    [other]: data.myWords[other].filter((p) => p !== phrase),
+    remove: mine.remove.filter((p) => p !== phrase),
+    keep: mine.keep.filter((p) => p !== phrase),
+    replace: mine.replace.filter(([p]) => p !== phrase),
   };
+  if (kind === "replace") myWords.replace.push([phrase, replacement]);
+  else myWords[kind].push(phrase);
   // 저장하면 onSettingsChanged 가 불려 새 목록으로 다시 그린다.
   chrome.storage.local.set({ myWords });
-  share({ kind, text: textKey(entry.original), phrase }, anchor);
+  const payload = { kind, text: textKey(entry.original), phrase };
+  if (kind === "replace") payload.replacement = replacement;
+  share(payload, anchor);
 }
 
 // 누른 곳이 어느 댓글의 얼굴인지 찾는다. 원문 요소를 그대로 꾸민 댓글은 얼굴이 배경 그림이라 자리로 판단한다.
@@ -555,16 +571,29 @@ function onSelection(event) {
   const textEl = where.matches("[data-eml-inplace]") ? where : where.previousElementSibling;
   const entry = textEl && tracked.get(textEl);
   if (!entry || !entry.original.includes(phrase)) return;
-  // 지금 순화본에 남아 있는 표현이면 "지우기", 원문에만 있는(이미 지워진) 표현이면 "남기기"를 권한다.
+  // 지금 순화본에 남아 있는 표현이면 "바꾸기·지우기", 원문에만 있는(이미 지워졌거나 바뀐) 표현이면 "바꾸기·그대로 두기"를 권한다.
   const stillShown = (entry.cleaned ?? entry.original).includes(phrase);
   const rect = selection.getRangeAt(0).getBoundingClientRect();
   const anchor = { x: rect.left + rect.width / 2, y: rect.top };
   openWordMenu({
     ...anchor,
-    actions: [stillShown ? { id: "remove", label: "이 표현 지우기" } : { id: "keep", label: "이 표현 남기기" }],
+    actions: [
+      { id: "replace", label: "바꾸기" },
+      stillShown ? { id: "remove", label: "지우기" } : { id: "keep", label: "그대로 두기" },
+    ],
     onPick: (kind) => {
       selection.removeAllRanges();
-      fixWord(textEl, kind, phrase, anchor);
+      if (kind !== "replace") {
+        fixWord(textEl, kind, phrase, anchor);
+        return;
+      }
+      openReplaceInput({
+        ...anchor,
+        phrase,
+        suggestion: suggestSoftening(phrase),
+        // 빈칸으로 바꾸면 지우기와 같다.
+        onSubmit: (to) => (to ? fixWord(textEl, "replace", phrase, anchor, to) : fixWord(textEl, "remove", phrase, anchor)),
+      });
     },
   });
 }

@@ -29,14 +29,17 @@ export const DATA_KEYS = ["myFixes", "myWords", "shared"];
 /** 저장된 데이터를 온전한 모양으로 만든다. */
 export function normalizeData(stored = {}) {
   const list = (value) => (Array.isArray(value) ? value : []);
+  // 바꿀 표현은 [원래 표현, 바꿀 말] 짝의 목록이다.
+  const pairs = (value) => list(value).filter((p) => Array.isArray(p) && typeof p[0] === "string" && p[0] && typeof p[1] === "string");
   return {
     myFixes: list(stored.myFixes),
-    myWords: { remove: list(stored.myWords?.remove), keep: list(stored.myWords?.keep) },
+    myWords: { remove: list(stored.myWords?.remove), keep: list(stored.myWords?.keep), replace: pairs(stored.myWords?.replace) },
     shared: {
       version: stored.shared?.version ?? 0,
       examples: list(stored.shared?.examples),
       remove: list(stored.shared?.remove),
       keep: list(stored.shared?.keep),
+      replace: pairs(stored.shared?.replace),
     },
   };
 }

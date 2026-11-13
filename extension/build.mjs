@@ -20,6 +20,8 @@ await mkdir(`${OUT}ort`, { recursive: true });
 // 비어 있으면 서버와 통신하는 기능(수정 내용 보내기, 공유 묶음 받기)이 꺼진다.
 const config = JSON.parse(await readFile(new URL("./config.json", import.meta.url), "utf8"));
 const apiBase = (process.env.EMOTIONLESS_API ?? config.apiBase ?? "").replace(/\/+$/, "");
+// 서버에서 받는 개선 모델의 서명을 확인하는 공개 키 (Ed25519, JWK 의 x). 비어 있으면 모델을 받지 않는다.
+const modelKey = process.env.EMOTIONLESS_MODEL_KEY ?? config.modelPublicKey ?? "";
 console.log(`피드백 서버: ${apiBase || "(없음)"}`);
 
 const common = {
@@ -27,7 +29,7 @@ const common = {
   target: "chrome120",
   logLevel: "info",
   legalComments: "none",
-  define: { __API_BASE__: JSON.stringify(apiBase) },
+  define: { __API_BASE__: JSON.stringify(apiBase), __MODEL_KEY__: JSON.stringify(modelKey) },
 };
 await Promise.all([
   build({ ...common, entryPoints: ["src/content/index.js"], outfile: `${OUT}content.js`, format: "iife" }),

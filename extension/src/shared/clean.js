@@ -1,7 +1,13 @@
-// 모델이 고른 "지울 부분"으로 순화한 글을 만든다. 문장을 새로 쓰지 않고 지우기만 한다.
+// 모델이 고른 "지울 부분"과 "바꿀 부분"으로 순화한 글을 만든다. 문장을 새로 쓰지 않고, 고를 자리만 고친다.
 // 지울 부분 = 모델이 고른 곳 + 늘 지우는 것(욕설·ㅋㅋ 등) + 사용자가 지우라고 한 표현
-// 단, 주소와 사용자가 남기라고 한 표현은 지우지 않는다.
+// 바꿀 부분 = 모델이 고른 곳 + 순화 규칙(soften.json) + 사용자가 바꾸라고 한 표현 (뒤의 것이 이긴다)
+// 단, 주소와 사용자가 남기라고 한 표현은 건드리지 않는다.
 import { ruleSpans, splitUrls } from "./strip.js";
+import { softenSpans } from "./soften.js";
+
+const KEEP = 0;
+const DELETE = 1;
+const REPLACE = 2;
 
 const HAS_WORD = /[가-힣A-Za-z0-9]/;
 const LETTER = /[가-힣A-Za-z0-9]/;
@@ -20,11 +26,11 @@ function wholeWords(text, mark) {
     for (let i = start; i < end; i++) {
       if (!LETTER.test(text[i])) continue;
       letters++;
-      deleted += mark[i];
+      deleted += mark[i] === DELETE;
     }
     if (!letters || !deleted || deleted === letters) continue;
-    const value = deleted * 2 >= letters ? 1 : 0;
-    for (let i = start; i < end; i++) if (LETTER.test(text[i])) mark[i] = value;
+    const value = deleted * 2 >= letters ? DELETE : KEEP;
+    for (let i = start; i < end; i++) if (LETTER.test(text[i]) && mark[i] !== REPLACE) mark[i] = value;
   }
 }
 
@@ -34,6 +40,18 @@ function phraseSpans(text, phrases) {
     if (!phrase) continue;
     for (let i = text.indexOf(phrase); i >= 0; i = text.indexOf(phrase, i + phrase.length)) {
       spans.push([i, i + phrase.length]);
+    }
+  }
+  return spans;
+}
+
+function phraseReplaceSpans(text, pairs) {
+  const spans = [];
+  for (const pair of pairs) {
+    if (!Array.isArray(pair) || !pair[0]) continue;
+    const [phrase, to] = pair;
+    for (let i = text.indexOf(phrase); i >= 0; i = text.indexOf(phrase, i + phrase.length)) {
+      spans.push([i, i + phrase.length, to]);
     }
   }
   return spans;
@@ -62,20 +80,41 @@ export function tidy(text) {
 /**
  * @param {string} text 원문
  * @param {[number, number][]} modelSpans 모델이 지우라고 고른 자리
- * @param {{remove?: string[], keep?: string[]}} [words] 사용자가 알려 준 표현
+ * @param {{remove?: string[], keep?: string[], replace?: [string, string][]}} [words] 사용자가 알려 준 표현
+ * @param {[number, number, string][]} [modelReplace] 모델이 바꾸라고 고른 자리와 바꿀 말
  */
-export function cleanText(text, modelSpans = [], words = {}) {
+export function cleanText(text, modelSpans = [], words = {}, modelReplace = []) {
   const mark = new Uint8Array(text.length);
+  const replaceAt = new Map(); // 바꿀 자리의 시작 -> 바꿀 말
+  const clamp = (n) => Math.max(0, Math.min(text.length, n));
   const set = (spans, value) => {
-    for (const [start, end] of spans) mark.fill(value, Math.max(0, start), Math.min(text.length, end));
+    for (const [start, end] of spans) {
+      mark.fill(value, clamp(start), clamp(end));
+      for (const at of replaceAt.keys()) if (at >= start && at < end) replaceAt.delete(at);
+    }
   };
-  set(modelSpans, 1);
+  const replace = (spans) => {
+    for (const [start, end, to] of spans) {
+      if (typeof to !== "string" || clamp(end) <= clamp(start)) continue;
+      set([[start, end]], REPLACE);
+      replaceAt.set(clamp(start), to);
+    }
+  };
+  set(modelSpans, DELETE);
   wholeWords(text, mark);
-  set(ruleSpans(text), 1);
-  set(phraseSpans(text, words.remove ?? []), 1);
-  set(phraseSpans(text, words.keep ?? []), 0);
-  set(urlSpans(text), 0);
-  let kept = "";
-  for (let i = 0; i < text.length; i++) kept += mark[i] ? " " : text[i];
-  return tidy(kept);
+  set(ruleSpans(text), DELETE);
+  set(phraseSpans(text, words.remove ?? []), DELETE);
+  replace(modelReplace);
+  replace(softenSpans(text));
+  replace(phraseReplaceSpans(text, words.replace ?? []));
+  set(phraseSpans(text, words.keep ?? []), KEEP);
+  set(urlSpans(text), KEEP);
+  let out = "";
+  for (let i = 0; i < text.length; i++) {
+    if (mark[i] === KEEP) out += text[i];
+    else if (mark[i] === DELETE) out += " ";
+    // 바꿀 자리는 시작 글자에서 바꿀 말을 한 번 넣고 나머지 글자는 건너뛴다.
+    else if (replaceAt.has(i)) out += replaceAt.get(i);
+  }
+  return tidy(out);
 }

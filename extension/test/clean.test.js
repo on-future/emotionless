@@ -23,7 +23,7 @@ test("cleanText: 낱말 중간에서 자르지 않는다", () => {
 
 test("cleanText: 모델이 놓쳐도 욕설·ㅋㅋ·이모지는 지운다", () => {
   assert.equal(cleanText("살좀 빠졌니 ㅋㅋㅋ !"), "살좀 빠졌니!");
-  assert.equal(cleanText("이건 좀 병신같은 패치임 😡"), "이건 좀 패치임");
+  assert.equal(cleanText("이건 좀 병신 패치임 😡"), "이건 좀 패치임");
 });
 
 test("cleanText: 주소와 남기라고 한 표현은 지우지 않는다", () => {
@@ -46,4 +46,21 @@ test("tidy: 공백과 반복된 문장 부호를 정리한다", () => {
   assert.equal(tidy("  이번엔   실망 ..  알이 작아요 !!!  "), "이번엔 실망. 알이 작아요!");
   assert.equal(tidy(", . 남은 글"), "남은 글");
   assert.equal(tidy("소수점 3.5점은 그대로"), "소수점 3.5점은 그대로");
+});
+
+test("cleanText: 지우면 어색한 거친 말은 순한 말로 바꾼다", () => {
+  assert.equal(cleanText("존나 좋다 ㅋㅋㅋ"), "정말 좋다");
+  assert.equal(cleanText("이 새끼들 왜 이래"), "이 사람들 왜 이래");
+  assert.equal(cleanText("이건 좀 병신같은 패치임"), "이건 좀 형편없는 패치임");
+  assert.equal(cleanText("개웃기네 이거"), "정말 웃기네 이거");
+  // 뜻이 여럿인 말과 비슷하게 생긴 말은 건드리지 않는다.
+  assert.equal(cleanText("개발자들 일 안하냐"), "개발자들 일 안하냐");
+  assert.equal(cleanText("강아지 새끼 너무 귀엽다"), "강아지 너무 귀엽다");
+});
+
+test("cleanText: 사용자와 모델이 고른 바꿀 말을 쓴다", () => {
+  assert.equal(cleanText("저 사람 진짜 별로", [], { replace: [["별로", "아쉬워"]] }), "저 사람 진짜 아쉬워");
+  assert.equal(cleanText("완전 미친 가격", [], {}, [[3, 5, "놀라운"]]), "완전 놀라운 가격");
+  // 남기라고 한 표현은 바꾸지 않는다.
+  assert.equal(cleanText("존나 좋다", [], { keep: ["존나"] }), "존나 좋다");
 });

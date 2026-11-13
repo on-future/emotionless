@@ -230,8 +230,29 @@
 .eml-pop .eml-pop-primary { background: #2b5fd9; color: #fff; }
 .eml-pop .eml-pop-primary:hover { background: #244fb8; }
 
+.eml-pop-replace { display: block; width: 248px; padding: 12px; }
+.eml-pop-replace .eml-pop-text { margin-bottom: 8px; opacity: 0.8; }
+.eml-pop-replace strong { font-weight: 700; }
+.eml-pop .eml-pop-input {
+  all: unset;
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0 0 10px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  font: inherit;
+  color: inherit;
+  cursor: text;
+}
+.eml-pop .eml-pop-input:focus { border-color: #2b5fd9; background: transparent; }
+.eml-pop .eml-pop-input::placeholder { color: inherit; opacity: 0.45; }
+
 @media (prefers-color-scheme: dark) {
   .eml-pop { background: rgba(38, 41, 48, 0.98); color: #eef1f6; border-color: rgba(255, 255, 255, 0.14); }
+  .eml-pop .eml-pop-input { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.16); }
   .eml-pop .eml-pop-action:hover { background: rgba(255, 255, 255, 0.1); }
   .eml-pop .eml-pop-primary:hover { background: #244fb8; }
 }

@@ -134,10 +134,11 @@ function render() {
   $("showPill").checked = settings.showPill;
   // 서버가 설정돼 있을 때만 보내기 스위치를 보여 준다.
   $("shareRow").hidden = !__API_BASE__;
-  $("shareFeedback").checked = settings.shareFeedback === true;
+  // 동의한 적이 있고 끄지 않은 경우에만 켜진 것으로 보인다 (아직 묻지 않았으면 보내지 않으므로 꺼짐으로 보인다).
+  $("shareFeedback").checked = settings.shareNoticeSeen === true && settings.shareFeedback === true;
   $("shareFeedback").disabled = !settings.enabled;
   const fixed = data.myFixes.length;
-  const worded = data.myWords.remove.length + data.myWords.keep.length;
+  const worded = data.myWords.remove.length + data.myWords.keep.length + data.myWords.replace.length;
   // 고친 것이 있을 때만 보여 준다.
   $("fixRow").hidden = fixed + worded === 0;
   $("fixSub").textContent = `감정 ${fixed}개, 표현 ${worded}개`;
@@ -231,9 +232,12 @@ async function main() {
     if (e.target.name === "level") save({ level: e.target.value });
   });
   $("showPill").addEventListener("change", (e) => save({ showPill: e.target.checked }));
-  $("shareFeedback").addEventListener("change", (e) => save({ shareFeedback: e.target.checked }));
+  // 여기서 켜는 것도 사용자가 직접 고른 동의이므로, 다음에 고칠 때 다시 묻지 않는다.
+  $("shareFeedback").addEventListener("change", (e) => {
+    if (e.isTrusted) save({ shareFeedback: e.target.checked, shareNoticeSeen: true });
+  });
   $("resetFixes").addEventListener("click", async () => {
-    await chrome.storage.local.set({ myFixes: [], myWords: { remove: [], keep: [] } });
+    await chrome.storage.local.set({ myFixes: [], myWords: { remove: [], keep: [], replace: [] } });
     refresh();
   });
   $("site").addEventListener("change", (e) => {

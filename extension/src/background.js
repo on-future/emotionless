@@ -1,4 +1,5 @@
 // 서비스 워커: 모델을 실행하는 오프스크린 문서를 띄우고 분류 요청을 전달한다.
+import { MODEL_MAX_BYTES, compatibleMeta, loadStoredModel, sha256Hex, storeModel, verifyModelSignature } from "./shared/model-store.js";
 
 let creating = null;
 
@@ -79,7 +80,12 @@ function sanitizeShared(body) {
     )
     .slice(0, 5000)
     .map((e) => ({ v: e.v, g: e.g }));
-  return { version: Number.isInteger(body?.version) ? body.version : 0, examples, remove: phrases(body?.remove), keep: phrases(body?.keep) };
+  const replace = (Array.isArray(body?.replace) ? body.replace : [])
+    .filter((p) => Array.isArray(p) && p.length === 2 && typeof p[0] === "string" && typeof p[1] === "string")
+    .filter(([from, to]) => from.length > 0 && from.length <= 40 && to.length > 0 && to.length <= 40)
+    .slice(0, 2000)
+    .map(([from, to]) => [from, to]);
+  return { version: Number.isInteger(body?.version) ? body.version : 0, examples, remove: phrases(body?.remove), keep: phrases(body?.keep), replace };
 }
 
 async function syncShared() {
@@ -94,8 +100,57 @@ async function syncShared() {
   await chrome.storage.local.set({ shared: sanitizeShared(await res.json()) });
 }
 
+// ── 개선 모델 받기 ────────────────────────────────────────────────────────
+// 사용자들이 고친 내용으로 서버가 다시 학습한 모델을 하루 한 번 확인해 받는다.
+// 모델은 실행 코드가 아니라 가중치와 계산 그래프(ONNX)이고, 확장에 든 실행기(onnxruntime-web)로만 돌린다.
+// 개발자의 서명 키로 서명된 것만 받는다. 서버가 뚫려도 서명 없는 모델은 쓰지 않는다.
+const MODEL_KEY = __MODEL_KEY__;
+const MODEL_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+async function syncModel() {
+  if (!API_BASE || !MODEL_KEY) return;
+  const { modelCheckedAt = 0 } = await chrome.storage.local.get("modelCheckedAt");
+  if (Date.now() - modelCheckedAt < MODEL_INTERVAL_MS) return;
+  await chrome.storage.local.set({ modelCheckedAt: Date.now() });
+
+  const res = await fetch(`${API_BASE}/v1/model/manifest.json`, { cache: "no-store" });
+  if (!res.ok) return;
+  const manifest = await res.json();
+  const valid =
+    Number.isInteger(manifest?.version) &&
+    /^[0-9a-f]{64}$/.test(manifest.sha256 ?? "") &&
+    Number.isInteger(manifest.size) &&
+    manifest.size > 0 &&
+    manifest.size <= MODEL_MAX_BYTES &&
+    typeof manifest.meta === "string" &&
+    typeof manifest.signature === "string" &&
+    typeof manifest.file === "string" &&
+    /^\/v1\/model\/files\/[0-9a-f]{64}\.onnx$/.test(manifest.file);
+  if (!valid) return;
+
+  const bundled = await fetch(chrome.runtime.getURL("models/student/emotionless.json")).then((r) => r.json());
+  const stored = await loadStoredModel();
+  if (manifest.version <= Math.max(bundled.version ?? 1, stored?.version ?? 0)) return;
+  if (!(await verifyModelSignature(manifest, MODEL_KEY))) return;
+  const meta = JSON.parse(manifest.meta);
+  const vocab = await fetch(chrome.runtime.getURL("models/student/vocab.txt")).then((r) => r.text());
+  const vocabSha256 = await sha256Hex(new TextEncoder().encode(vocab));
+  if (meta.version !== manifest.version || !compatibleMeta(meta, { labels: bundled.labels, vocabSha256 })) return;
+
+  const file = await fetch(`${API_BASE}${manifest.file}`, { cache: "no-store" });
+  if (!file.ok) return;
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (bytes.length !== manifest.size || (await sha256Hex(bytes)) !== manifest.sha256) return;
+  await storeModel({ version: manifest.version, sha256: manifest.sha256, meta, bytes });
+  // 이미 떠 있는 오프스크린 문서에 알려 다음 판정부터 새 모델을 쓰게 한다.
+  if (await chrome.offscreen.hasDocument()) chrome.runtime.sendMessage({ target: "offscreen", type: "reload-model" }).catch(() => {});
+}
+
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg?.type === "feedback") sendFeedback(msg.payload).catch(() => {});
-  else if (msg?.type === "sync-shared") syncShared().catch(() => {});
+  else if (msg?.type === "sync-shared") {
+    syncShared().catch(() => {});
+    syncModel().catch(() => {});
+  }
   return false;
 });
