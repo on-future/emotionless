@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Emotionless - 댓글 감정 순화",
   "short_name": "Emotionless",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "댓글마다 감정을 이모티콘으로 보여 주고, 욕설과 과한 감정 표현을 걷어낸 글로 바꿔 줍니다. 댓글 처리는 내 기기 안에서 이루어집니다.",
   "minimum_chrome_version": "116",
   "icons": {

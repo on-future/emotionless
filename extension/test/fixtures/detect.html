@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>댓글 찾기 시험</title>
+<style>body { font: 15px/1.5 system-ui; max-width: 760px; margin: 24px auto; } section { border-top: 1px solid #ccc; margin-top: 24px; }</style>
+</head>
+<body>
+<!-- data-expect="body": 본문으로 잡혀야 하는 요소. data-expect="skip": 본문으로 잡히면 안 되는 요소 (안내문 등). -->
+<h1>댓글 찾기 시험 페이지</h1>
+
+<section id="short">
+  <h2>짧은 댓글과 사이트 안내문 (뉴스 댓글형)</h2>
+  <div class="cmt_list">
+    <dl class="cmt_item"><dt><span class="nameui">rena****</span> <span class="date">11.13 11:06</span></dt>
+      <dd class="usertxt" data-expect="skip">차단 시스템이 부적절한 내용을 감지하여 자동 숨김 처리한 댓글입니다. <a href="#">숨기기 취소</a></dd></dl>
+    <dl class="cmt_item"><dt><span class="nameui">jjkj****</span> <span class="date">11.13 11:02</span></dt>
+      <dd class="usertxt" data-expect="body"><img alt="" src="data:,">응원합니다</dd></dl>
+    <dl class="cmt_item"><dt><span class="nameui">make****</span> <span class="date">11.13 10:52</span></dt>
+      <dd class="usertxt" data-expect="body">일반인으로썬 출중한데 저렇게 나오니 또 그냥 그렇네 배우는 허들이 높은가보다</dd></dl>
+    <dl class="cmt_item"><dt><span class="nameui">ll20****</span> <span class="date">11.13 11:11</span></dt>
+      <dd class="usertxt" data-expect="body">ㅋㅋ</dd></dl>
+  </div>
+</section>
+
+<section id="utility">
+  <h2>모양 클래스만 있는 후기 카드 (Tailwind형)</h2>
+  <div class="review-swiper">
+    <div class="swiper-wrapper">
+      <div class="swiper-slide"><article class="review-card card flex flex-col gap-5 p-6">
+        <header class="flex items-center gap-3.5"><div class="min-w-0 flex-1"><p class="truncate text-base font-bold">이*선</p><p class="truncate text-sm text-neutral-500">@kin**_car</p></div></header>
+        <div class="flex flex-1 flex-col gap-3"><p class="text-base leading-relaxed text-neutral-200" data-expect="body">아이들 태우기 전에 한 번 사용하면 마음이 놓입니다. 주차장에서 바로 진공청소를 할 수 있어 편합니다.</p></div>
+      </article></div>
+      <div class="swiper-slide"><article class="review-card card flex flex-col gap-5 p-6">
+        <header class="flex items-center gap-3.5"><div class="min-w-0 flex-1"><p class="truncate text-base font-bold">이*훈</p><p class="truncate text-sm text-neutral-500">@pe**ean</p></div></header>
+        <div class="flex flex-1 flex-col gap-3"><p class="text-base leading-relaxed text-neutral-200" data-expect="body">반려견 산책 후 차 안 냄새 관리에 좋아요. 털과 냄새가 항상 고민이었습니다.</p></div>
+      </article></div>
+      <div class="swiper-slide"><article class="review-card card flex flex-col gap-5 p-6">
+        <header class="flex items-center gap-3.5"><div class="min-w-0 flex-1"><p class="truncate text-base font-bold">김*기</p><p class="truncate text-sm text-neutral-500">@fr**air_35</p></div></header>
+        <div class="flex flex-1 flex-col gap-3"><p class="text-base leading-relaxed text-neutral-200" data-expect="body">여름에 에어컨 켜기 전에 미리 사용합니다. 실내가 한결 상쾌하게 느껴집니다.</p></div>
+      </article></div>
+    </div>
+  </div>
+</section>
+
+<section id="replies">
+  <h2>닉네임이 본문보다 긴 경우와 @답글 (커뮤니티형)</h2>
+  <div class="comment-list">
+    <div class="comment-item"><div class="writer-area"><span class="writer-nickname">디오카네_자동차매니아</span><span class="ago">40분전</span></div>
+      <div class="memo" data-expect="body">상대차주가 인정하였으면 무조건 교체해야죠<br>그리고 전동계부분도 문제가 될수있으니 교체하시는게 좋을듯 합니다</div></div>
+    <div class="comment-item reply"><div class="writer-area"><span class="writer-nickname">삭스삭스</span><span class="badge">글쓴이</span><span class="ago">29분전</span></div>
+      <div class="memo" data-expect="body"><a href="#" class="mention">@디오카네_자동차매니아</a><br>네 전동계 때문에 님 의견대로 교체가 맞는거 같네요</div></div>
+    <div class="comment-item"><div class="writer-area"><span class="writer-nickname">마르티네즈의차고</span><span class="ago">35분전</span></div>
+      <div class="memo" data-expect="body">왜 고민?</div></div>
+    <div class="comment-item reply"><div class="writer-area"><span class="writer-nickname">삭스삭스</span><span class="badge">글쓴이</span><span class="ago">27분전</span></div>
+      <div class="memo" data-expect="body"><a href="#" class="mention">@마르티네즈의차고</a><br>차가 오래되고 23만이 넘어가는 이런 고민이 되네요 의견 감사합니다</div></div>
+    <div class="comment-item"><div class="writer-area"><span class="writer-nickname">네버님</span><span class="ago">34분전</span></div>
+      <div class="memo" data-expect="skip">작성자에 의해 삭제된 댓글입니다.</div></div>
+  </div>
+</section>
+
+<section id="paragraphs">
+  <h2>문단 여러 개로 된 댓글</h2>
+  <ul class="comments">
+    <li class="comment"><span class="nick">하늘바다</span>
+      <div class="comment-body" data-expect="body"><p>첫 문단입니다. 정말 좋네요.</p><p>둘째 문단도 있어요.</p></div></li>
+    <li class="comment"><span class="nick">산들바람</span>
+      <div class="comment-body" data-expect="body"><p>한 문단짜리 댓글이에요 그냥</p></div></li>
+  </ul>
+</section>
+
+<section id="nested">
+  <h2>답글이 댓글 안에 들어 있는 구조</h2>
+  <ul class="cmt-list">
+    <li class="cmt"><div class="cmt-head"><b>홍길동</b></div><div class="cmt-txt" data-expect="body">부모 댓글 본문입니다 길게 씁니다</div>
+      <ul class="cmt-replies"><li class="cmt"><div class="cmt-head"><b>임꺽정</b></div><div class="cmt-txt" data-expect="body">안쪽 답글입니다</div></li></ul></li>
+    <li class="cmt"><div class="cmt-head"><b>장길산</b></div><div class="cmt-txt" data-expect="body">두 번째 부모 댓글</div></li>
+  </ul>
+</section>
+</body>
+</html>

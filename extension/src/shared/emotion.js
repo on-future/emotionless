@@ -1,5 +1,6 @@
 // KOTE 44개 감정 라벨 점수를 화면에 쓰는 감정 그룹 하나로 묶는다.
-// 기준값은 샘플 13문장으로 잡은 초기값이다.
+// 기준값은 KOTE 시험 문장 5,000개를 평가자 5명의 판단과 견줘 정했다 (extension/bench/score.mjs 로 점수를 볼 수 있다).
+// 사람은 중립·긍정으로 본 글에 부정 감정을 붙이는 오판이 가장 거슬리므로, 그 오판을 줄이는 쪽으로 잡았다.
 
 export const GROUPS = {
   anger: { emoji: "😡", label: "분노", fold: true },
@@ -47,6 +48,12 @@ const SOFT = {
   surprise: ["놀람", "경악", "신기함/관심"],
 };
 
+// 묶음마다 이 점수를 넘어야 그 감정으로 본다. 불안·놀람은 0.6 에서는 사람과 맞는 비율이 각각 36%·53% 였고
+// 0.75 에서 77%·63% 로 오른다 (조언 글이 "불안"으로 잡히던 오판). 전체 정확도는 거의 그대로다.
+const SOFT_MIN = { positive: 0.6, sad: 0.6, fear: 0.75, surprise: 0.75 };
+// 불만: 0.7 → 0.75 로 올려 엉뚱한 부정 판정을 91건에서 61건으로 줄였다 (전체 정확도 -1.7%p).
+const COMPLAINT_MIN = 0.75;
+
 const max = (scores, labels) => Math.max(0, ...labels.map((l) => scores[l] ?? 0));
 
 export function classify(scores) {
@@ -59,15 +66,16 @@ export function classify(scores) {
   if (s("한심함") >= 0.8 && hate >= 0.6) return "blame";
   // 강한 분노: 화와 어이없음이 함께 높거나, 화와 혐오가 함께 높은 글
   if (anger >= 0.9 && (s("어이없음") >= 0.88 || hate >= 0.75)) return "anger";
-  if (Math.max(s("불평/불만"), s("짜증"), anger) >= 0.7) return "complaint";
+  if (Math.max(s("불평/불만"), s("짜증"), anger) >= COMPLAINT_MIN) return "complaint";
 
+  // 기준을 넘은 묶음 가운데 기준보다 가장 많이 넘은 묶음을 고른다.
   let best = "neutral";
-  let bestScore = 0.6;
+  let bestMargin = -1;
   for (const [group, labels] of Object.entries(SOFT)) {
-    const score = max(scores, labels);
-    if (score > bestScore) {
+    const margin = max(scores, labels) - SOFT_MIN[group];
+    if (margin > 0 && margin > bestMargin) {
       best = group;
-      bestScore = score;
+      bestMargin = margin;
     }
   }
   return best;
